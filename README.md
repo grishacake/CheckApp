@@ -39,7 +39,7 @@ docker run -p 8080:8080 app-grabber-backend
 
 ```json
 {
-  "app_id": "com.uchi.app",
+  "package_name": "com.uchi.app",
   "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
   "name": "Учи.ру",
   "developer": "ООО \"Учи.ру\"",
