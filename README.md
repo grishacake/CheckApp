@@ -1,7 +1,5 @@
 # App Grabber — backend
 
-Скелет бэкенда для хакатона. Сервер запускается, но данные из магазинов ещё не получает: парсер будет написан на хакатоне.
-
 ## Запуск
 
 Нужен Go 1.24+.
@@ -24,6 +22,12 @@ docker build -t app-grabber-backend .
 docker run -p 8080:8080 app-grabber-backend
 ```
 
+## Swagger / OpenAPI
+
+После запуска откройте http://localhost:8080/docs - интерактивная документация и примеры восьми полей.
+Спецификация: http://localhost:8080/openapi.json или файл [docs/openapi.json](docs/openapi.json).
+Пример карточки для моков: [docs/examples/app.json](docs/examples/app.json).
+
 ## API
 
 | Метод | Путь | Что делает |
@@ -35,13 +39,14 @@ docker run -p 8080:8080 app-grabber-backend
 
 ```json
 {
-  "app_id": "com.uchi.app",
+  "package_name": "com.uchi.app",
   "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
   "name": "Учи.ру",
   "developer": "ООО \"Учи.ру\"",
   "icon_url": "https://play-lh.googleusercontent.com/...",
   "category": "Образование",
-  "rating": 4.2
+  "rating": 4.2,
+  "age_rating": "3+"
 }
 ```
 
@@ -59,4 +64,5 @@ Dockerfile                Сборка образа
 - Получение данных из Google Play (клиент + парсер) в `internal/googleplay/`
 - Сохранить настоящие страницы 10–20 приложений в `testdata/` и написать тесты на них
 - Ошибки: неверный ID → 400, приложение не найдено → 404
-- Поля `store` и `fetched_at`, хранение в БД
+- Возрастной рейтинг `age_rating` — восьмое поле карточки.
+- Поиск по названию, БД, история и сравнение магазинов не входят в текущий хакатон.
