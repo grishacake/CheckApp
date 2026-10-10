@@ -63,7 +63,7 @@
             "description": "Формат обратного домена",
             "schema": {
               "type": "string",
-              "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
             },
             "example": "com.uchi.app"
           }
