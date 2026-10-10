@@ -257,6 +257,27 @@ func (emptyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// Сетевая ошибка содержит URL с package name. "404" в имени не должно превращать её в «не найдено».
+func TestGetApp_NetworkErrorWith404InID(t *testing.T) {
+	old := http.DefaultClient.Transport
+	http.DefaultClient.Transport = failingTransport{}
+	defer func() { http.DefaultClient.Transport = old }()
+
+	_, err := newTestClient().GetApp(context.Background(), "com.app404")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+	if errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("err = %v, must not be ErrNotFound", err)
+	}
+}
+
+type failingTransport struct{}
+
+func (failingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, errors.New("connection reset")
+}
+
 func TestNormalizeAge(t *testing.T) {
 	for in, want := range map[string]string{
 		"3+":         "3+",

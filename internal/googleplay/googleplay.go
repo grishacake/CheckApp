@@ -128,8 +128,10 @@ func (c *Client) wait(ctx context.Context) error {
 }
 
 // isNotFound: библиотека не отдаёт код ответа, только текст "request error: 404 Not Found".
+// Сравниваем с началом строки, а не ищем "404" где угодно: сетевые ошибки содержат URL с package name,
+// и тайм-аут для com.app404 иначе превратился бы в «не найдено».
 func isNotFound(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "404")
+	return err != nil && strings.HasPrefix(err.Error(), "request error: 404")
 }
 
 func toModel(a *gp.App, language, country string) model.App {
