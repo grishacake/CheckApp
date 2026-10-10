@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,11 +80,42 @@ func downloadFixtures() error {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
+	for query, name := range searchFixtures {
+		u := searchURL + "?" + url.Values{"q": {query}, "c": {"apps"}, "hl": {"ru"}, "gl": {"ru"}}.Encode()
+		resp, err := http.Get(u)
+		if err != nil {
+			return err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("search %q: %s", query, resp.Status)
+		}
+		if err := writeGzip(searchFixturePath(name), body); err != nil {
+			return err
+		}
+		fmt.Printf("search %q: saved\n", query)
+		time.Sleep(500 * time.Millisecond)
+	}
 	return nil
 }
 
 func fixturePath(id, gl string) string {
 	return filepath.Join("testdata", id+"."+gl+".html.gz")
+}
+
+// searchFixtures — сохранённые страницы поиска: запрос → имя файла testdata/search.<имя>.html.gz.
+var searchFixtures = map[string]string{
+	"google chrome":   "google_chrome",
+	"учи ру":          "uchi_ru",
+	"zzqqxxyyrr12345": "nothing",
+}
+
+func searchFixturePath(name string) string {
+	return filepath.Join("testdata", "search."+name+".html.gz")
 }
 
 func writeGzip(path string, data []byte) error {
@@ -114,7 +146,11 @@ type fixtureTransport struct{}
 
 func (fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	q := r.URL.Query()
-	body, err := readGzip(fixturePath(q.Get("id"), q.Get("gl")))
+	path := fixturePath(q.Get("id"), q.Get("gl"))
+	if r.URL.Path == "/store/search" {
+		path = searchFixturePath(searchFixtures[q.Get("q")])
+	}
+	body, err := readGzip(path)
 	status := http.StatusOK
 	if errors.Is(err, os.ErrNotExist) {
 		status, body = http.StatusNotFound, nil
@@ -291,5 +327,56 @@ func TestNormalizeAge(t *testing.T) {
 		if got := normalizeAge(in); got != want {
 			t.Errorf("normalizeAge(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestSearch_IDsInGooglePlayOrder(t *testing.T) {
+	ids, err := newTestClient().searchIDs(context.Background(), "google chrome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"com.android.chrome", "com.chrome.beta", "com.chrome.dev"}
+	if len(ids) < len(want) {
+		t.Fatalf("ids = %v, want at least %v", ids, want)
+	}
+	for i, id := range want {
+		if ids[i] != id {
+			t.Errorf("ids[%d] = %q, want %q (all: %v)", i, ids[i], id, ids[:5])
+		}
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			t.Errorf("duplicate id %q", id)
+		}
+		seen[id] = true
+	}
+}
+
+// В testdata есть карточка только Учи.ру: остальные из выдачи дают 404 и пропускаются.
+func TestSearch_ReturnsCards(t *testing.T) {
+	cards, err := newTestClient().Search(context.Background(), "учи ру", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) == 0 || cards[0].PackageName != "com.uchi.app" || cards[0].Name != "Учи.ру" {
+		t.Fatalf("cards = %+v, want Учи.ру first", cards)
+	}
+}
+
+func TestSearch_NothingFound(t *testing.T) {
+	cards, err := newTestClient().Search(context.Background(), "zzqqxxyyrr12345", 5)
+	if err != nil || len(cards) != 0 {
+		t.Fatalf("cards = %v, err = %v, want empty without error", cards, err)
+	}
+}
+
+func TestSearch_GoogleDown(t *testing.T) {
+	old := http.DefaultClient.Transport
+	http.DefaultClient.Transport = failingTransport{}
+	defer func() { http.DefaultClient.Transport = old }()
+
+	if _, err := newTestClient().Search(context.Background(), "telegram", 5); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }

@@ -17,6 +17,10 @@
       "description": "Карточка приложения Google Play"
     },
     {
+      "name": "Search",
+      "description": "Поиск приложений по словам"
+    },
+    {
       "name": "Health",
       "description": "Проверка сервера"
     }
@@ -141,6 +145,68 @@
           }
         }
       }
+    },
+    "/api/search": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "operationId": "searchApps",
+        "summary": "Найти приложения по словам, как в поиске Google Play",
+        "description": "Возвращает до 5 карточек в порядке выдачи Google Play. Ответ 2–4 секунды: каждая карточка — отдельный запрос к Google. Ничего не нашлось — 200 и пустой results.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Поисковая строка, 1–100 символов, UTF-8",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "example": "google chrome"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ответ - найденные приложения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ответ - пустой, слишком длинный или не UTF-8 запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Пустой поисковый запрос"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Ответ - Google Play не ответил или тайм-аут",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Не удалось выполнить поиск в Google Play"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -225,6 +291,44 @@
             "type": "string",
             "description": "Сообщение об ошибке."
           }
+        }
+      },
+      "SearchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query",
+          "results"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Запрос после обрезки пробелов.",
+            "example": "google chrome"
+          },
+          "results": {
+            "type": "array",
+            "maxItems": 5,
+            "description": "Карточки в порядке выдачи Google Play.",
+            "items": {
+              "$ref": "#/components/schemas/App"
+            }
+          }
+        },
+        "example": {
+          "query": "google chrome",
+          "results": [
+            {
+              "package_name": "com.android.chrome",
+              "store_url": "https://play.google.com/store/apps/details?id=com.android.chrome&hl=ru",
+              "name": "Google Chrome",
+              "developer": "Google LLC",
+              "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+              "category": "Связь",
+              "rating": 4.1,
+              "age_rating": "3+"
+            }
+          ]
         }
       }
     }
