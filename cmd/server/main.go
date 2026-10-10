@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"app-grabber-backend/docs"
+	"app-grabber-backend/internal/googleplay"
 	"app-grabber-backend/internal/httpapi"
 )
 
@@ -16,7 +17,11 @@ func main() {
 		addr = ":" + port
 	}
 
-	handler := httpapi.NewHandler(unconfiguredProvider{}, 10*time.Second)
+	// Библиотека Google Play ходит через http.DefaultClient и не принимает контекст:
+	// без тайм-аута зависший запрос к Google висел бы в фоне бесконечно.
+	http.DefaultClient.Timeout = 15 * time.Second
+
+	handler := httpapi.NewHandler(googleplay.New(), 10*time.Second)
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
