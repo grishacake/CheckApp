@@ -1,0 +1,232 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "App Grabber API",
+    "version": "0.1.0",
+    "description": "API-контракт"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Текущий сервер"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Apps",
+      "description": "Карточка приложения Google Play"
+    },
+    {
+      "name": "Health",
+      "description": "Проверка сервера"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "operationId": "getHealth",
+        "summary": "Проверить доступность сервера",
+        "responses": {
+          "200": {
+            "description": "Сервер работает.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "ok"
+                  ]
+                },
+                "example": "ok"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{id}": {
+      "get": {
+        "tags": [
+          "Apps"
+        ],
+        "operationId": "getApp",
+        "summary": "Получить карточку по package name",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Формат обратного домена",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ответ - карточка приложения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/App"
+                },
+                "example": {
+                  "package_name": "com.uchi.app",
+                  "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
+                  "name": "Учи.ру",
+                  "developer": "ООО \"Учи.ру\"",
+                  "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+                  "category": "Образование",
+                  "rating": 4.2,
+                  "age_rating": "3+"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ответ - неверный формат package_name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Некорректный формат package_name"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "-",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Приложение не найдено в Google Play"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Ответ - сбой Google Play, блокировка, тайм-аут или ошибка разбора карточки.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "upstream": {
+                    "summary": "Ошибка источника",
+                    "value": {
+                      "error": "Не удалось получить данные из Google Play"
+                    }
+                  },
+                  "timeout": {
+                    "summary": "Тайм-аут",
+                    "value": {
+                      "error": "Превышено время ожидания Google Play"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "App": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "package_name",
+          "store_url",
+          "name",
+          "developer",
+          "icon_url",
+          "category",
+          "rating",
+          "age_rating"
+        ],
+        "properties": {
+          "package_name": {
+            "type": "string",
+            "description": "Android package name.",
+            "example": "com.uchi.app"
+          },
+          "store_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Ссылка на карточку Google Play."
+          },
+          "name": {
+            "type": "string",
+            "description": "Название приложения.",
+            "example": "Учи.ру"
+          },
+          "developer": {
+            "type": "string",
+            "description": "Название разработчика.",
+            "example": "ООО \"Учи.ру\""
+          },
+          "icon_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Ссылка на изображение иконки для отображения."
+          },
+          "category": {
+            "type": "string",
+            "description": "Категория приложения",
+            "example": "Образование"
+          },
+          "rating": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Рейтинг от 0 до 5.",
+            "example": 4.2
+          },
+          "age_rating": {
+            "type": "string",
+            "description": "Возрастная метка Google Play в исходном виде: например 3+, 12+.",
+            "example": "3+"
+          }
+        },
+        "example": {
+          "package_name": "com.uchi.app",
+          "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
+          "name": "Учи.ру",
+          "developer": "ООО \"Учи.ру\"",
+          "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+          "category": "Образование",
+          "rating": 4.2,
+          "age_rating": "3+"
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Сообщение об ошибке."
+          }
+        }
+      }
+    }
+  }
+}

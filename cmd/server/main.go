@@ -1,15 +1,13 @@
-// Точка входа: HTTP-сервер для фронтенда.
-// Сейчас это скелет: /health работает, /api/apps/{id} отвечает заглушкой 501.
-//
-//	go run ./cmd/server
-//	curl localhost:8080/api/apps/com.uchi.app
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"time"
+
+	"app-grabber-backend/docs"
+	"app-grabber-backend/internal/httpapi"
 )
 
 func main() {
@@ -18,33 +16,29 @@ func main() {
 		addr = ":" + port
 	}
 
+	handler := httpapi.NewHandler(unconfiguredProvider{}, 10*time.Second)
+
 	mux := http.NewServeMux()
+	docs.Register(mux)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if _, err := w.Write([]byte("ok")); err != nil {
+			log.Printf("write health response: %v", err)
+		}
 	})
-	mux.HandleFunc("GET /api/apps/{id}", getApp)
+	mux.HandleFunc("GET /api/apps/{id}", handler.GetApp)
 
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           withCORS(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, withCORS(mux)))
+	log.Fatal(server.ListenAndServe())
 }
 
-// getApp — GET /api/apps/{id}: карточка приложения.
-//
-// TODO (хакатон): получить данные из магазина и вернуть model.App.
-// Пока заглушка, чтобы фронтенд видел маршрут и формат ошибки.
-func getApp(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented yet"})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false) // чтобы & в ссылках не превращался в &
-	enc.Encode(v)
-}
-
-// withCORS разрешает фронтенду (другой порт на localhost) ходить к нам из браузера.
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
