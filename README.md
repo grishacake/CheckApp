@@ -33,7 +33,8 @@ docker run -p 8080:8080 app-grabber-backend
 | Метод | Путь | Что делает |
 |-------|------|------------|
 | GET | `/health` | Проверить, что сервер жив. |
-| GET | `/api/apps/{package_name}` | Карточка приложения. **Пока заглушка, отвечает 501.** |
+| GET | `/api/apps/{package_name}` | Карточка приложения из Google Play: 400 неверный формат, 404 не найдено, 502 Google не ответил. |
+| GET | `/api/search?q=google chrome` | Поиск по словам: до 5 карточек в порядке выдачи Google Play, `{"query": ..., "results": [...]}`. |
 
 Договорённый формат ответа для `/api/apps/{package_name}` (структура `model.App`):
 

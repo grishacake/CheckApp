@@ -21,7 +21,10 @@ func main() {
 	// без тайм-аута зависший запрос к Google висел бы в фоне бесконечно.
 	http.DefaultClient.Timeout = 15 * time.Second
 
-	handler := httpapi.NewHandler(googleplay.New(), 10*time.Second)
+	// Один клиент на карточку и поиск, чтобы пауза между запросами к Google была общей.
+	gp := googleplay.New()
+	handler := httpapi.NewHandler(gp, 10*time.Second)
+	searchHandler := httpapi.NewSearchHandler(gp, 12*time.Second)
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
@@ -32,6 +35,7 @@ func main() {
 		}
 	})
 	mux.HandleFunc("GET /api/apps/{id}", handler.GetApp)
+	mux.HandleFunc("GET /api/search", searchHandler.Search)
 
 	server := &http.Server{
 		Addr:              addr,
