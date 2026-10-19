@@ -1,7 +1,6 @@
 // Package googleplay получает карточку приложения из Google Play.
 //
-// Страницу скачивает и разбирает библиотека github.com/Pius-x/google-play-scraper
-// (форк n0madic/google-play-scraper с тем же API — запасной вариант, если Google сломает разбор).
+// Страницу качаем сами (запрос отменяется вместе с ctx), разбор — в details.go.
 // Здесь — выбор региона, приведение ответа к model.App и перевод ошибок:
 // app.ErrNotFound (хендлер отвечает 404) или ErrUnavailable (502).
 package googleplay
@@ -10,14 +9,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
-
-	gp "github.com/Pius-x/google-play-scraper"
 
 	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/model"
@@ -25,12 +24,18 @@ import (
 
 const detailURL = "https://play.google.com/store/apps/details"
 
+// maxPageSize — больше страницу не читаем. Обычная карточка весит около 1,3 МБ.
+const maxPageSize = 10 << 20
+
 // ErrUnavailable — Google Play не ответил, ответил ошибкой или страница не разобралась (капча, новая разметка).
 // Хендлер отвечает на неё 502.
 var ErrUnavailable = errors.New("google play unavailable")
 
 // Client реализует app.Provider для Google Play.
 type Client struct {
+	// HTTP — клиент для запросов к Google. Время на запрос задаёт ctx вызывающего,
+	// Timeout клиента — запасной, на случай ctx без дедлайна.
+	HTTP *http.Client
 	// Language — язык карточки (hl): название категории, возрастной рейтинг.
 	Language string
 	// Countries — регионы (gl) по порядку. Следующий пробуем, только если в предыдущем 404:
@@ -48,15 +53,15 @@ var _ app.Provider = (*Client)(nil)
 // New возвращает клиент с настройками по умолчанию: русский язык, сначала RU, потом US.
 func New() *Client {
 	return &Client{
+		HTTP:        &http.Client{Timeout: 15 * time.Second},
 		Language:    "ru",
 		Countries:   []string{"ru", "us"},
 		MinInterval: 300 * time.Millisecond,
 	}
 }
 
-// GetApp возвращает карточку приложения.
-// Тайм-аут задаёт вызывающий через ctx: библиотека контекст не принимает,
-// поэтому при отмене мы перестаём ждать, а сам запрос дорабатывает в фоне.
+// GetApp возвращает карточку приложения. Тайм-аут задаёт вызывающий через ctx:
+// при отмене запрос к Google обрывается.
 func (c *Client) GetApp(ctx context.Context, id string) (model.App, error) {
 	var lastErr error
 	for _, country := range c.Countries {
@@ -75,35 +80,50 @@ func (c *Client) GetApp(ctx context.Context, id string) (model.App, error) {
 	return model.App{}, fmt.Errorf("%w: %w", ErrUnavailable, lastErr)
 }
 
-// load запрашивает одну страницу и возвращает ошибку библиотеки как есть.
+// load запрашивает одну страницу. 404 возвращает как *statusError, его проверяет isNotFound.
 func (c *Client) load(ctx context.Context, id, country string) (model.App, error) {
 	if err := c.wait(ctx); err != nil {
 		return model.App{}, err
 	}
 
-	type result struct {
-		app *gp.App
-		err error
+	q := url.Values{"id": {id}, "gl": {country}, "hl": {c.Language}}
+	page, err := c.get(ctx, detailURL+"?"+q.Encode())
+	if err != nil {
+		return model.App{}, err
 	}
-	done := make(chan result, 1) // с буфером, чтобы горутина не зависла после отмены ctx
-	go func() {
-		a := gp.New(id, gp.Options{Country: country, Language: c.Language})
-		done <- result{a, a.LoadDetails()}
-	}()
+	d := parseDetails(page)
+	if d.Title == "" {
+		// 200, но данных нет: капча или Google поменял разметку
+		return model.App{}, fmt.Errorf("no app data on page (gl=%s)", country)
+	}
+	return toModel(id, d, c.Language, country), nil
+}
 
-	select {
-	case <-ctx.Done():
-		return model.App{}, ctx.Err()
-	case r := <-done:
-		if r.err != nil {
-			return model.App{}, r.err
-		}
-		if r.app.Title == "" {
-			// 200, но данных нет: капча или Google поменял разметку
-			return model.App{}, fmt.Errorf("no app data on page (gl=%s)", country)
-		}
-		return toModel(r.app, c.Language, country), nil
+// statusError — Google ответил кодом, отличным от 200.
+type statusError struct {
+	Code   int
+	Status string
+}
+
+func (e *statusError) Error() string {
+	return "google play responded " + e.Status
+}
+
+// get скачивает страницу. Код ответа не 200 — *statusError.
+func (c *Client) get(ctx context.Context, u string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
 	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, &statusError{Code: resp.StatusCode, Status: resp.Status}
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, maxPageSize))
 }
 
 // wait выдерживает MinInterval между запросами.
@@ -127,23 +147,22 @@ func (c *Client) wait(ctx context.Context) error {
 	}
 }
 
-// isNotFound: библиотека не отдаёт код ответа, только текст "request error: 404 Not Found".
-// Сравниваем с началом строки, а не ищем "404" где угодно: сетевые ошибки содержат URL с package name,
-// и тайм-аут для com.app404 иначе превратился бы в «не найдено».
+// isNotFound — Google ответил 404: в этом регионе приложения нет.
 func isNotFound(err error) bool {
-	return err != nil && strings.HasPrefix(err.Error(), "request error: 404")
+	var se *statusError
+	return errors.As(err, &se) && se.Code == http.StatusNotFound
 }
 
-func toModel(a *gp.App, language, country string) model.App {
+func toModel(id string, d details, language, country string) model.App {
 	return model.App{
-		PackageName: a.ID,
-		StoreURL:    storeURL(a.ID, language, country),
-		Name:        a.Title,
-		Developer:   a.Developer,
-		IconURL:     a.Icon,
-		Category:    a.Genre,
-		Rating:      math.Round(a.Score*10) / 10,
-		AgeRating:   normalizeAge(a.ContentRating),
+		PackageName: id,
+		StoreURL:    storeURL(id, language, country),
+		Name:        d.Title,
+		Developer:   d.Developer,
+		IconURL:     d.Icon,
+		Category:    d.Genre,
+		Rating:      math.Round(d.Score*10) / 10,
+		AgeRating:   normalizeAge(d.ContentRating),
 	}
 }
 

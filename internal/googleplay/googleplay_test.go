@@ -48,8 +48,6 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
-	// Дальше все запросы библиотеки идут в testdata/, а не в сеть.
-	http.DefaultClient.Transport = fixtureTransport{}
 	os.Exit(m.Run())
 }
 
@@ -166,8 +164,14 @@ func (fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// newTestClient отвечает страницами из testdata/, а не из сети.
 func newTestClient() *Client {
+	return newTestClientWith(fixtureTransport{})
+}
+
+func newTestClientWith(rt http.RoundTripper) *Client {
 	c := New()
+	c.HTTP = &http.Client{Transport: rt}
 	c.MinInterval = 0
 	return c
 }
@@ -248,34 +252,61 @@ func TestGetApp_AllFixturesHaveFields(t *testing.T) {
 	}
 }
 
-// Google не отвечает дольше тайм-аута → ErrUnavailable, а не зависание.
+// Google не отвечает дольше тайм-аута → ErrUnavailable, а сам запрос отменяется, а не висит в фоне.
 func TestGetApp_Timeout(t *testing.T) {
-	old := http.DefaultClient.Transport
-	http.DefaultClient.Transport = slowTransport{}
-	defer func() { http.DefaultClient.Transport = old }()
-
+	rt := &hangingTransport{canceled: make(chan struct{})}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := newTestClient().GetApp(ctx, "com.uchi.app")
-	if !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("err = %v, want ErrUnavailable", err)
+
+	_, err := newTestClientWith(rt).GetApp(ctx, "com.uchi.app")
+	if !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want ErrUnavailable and DeadlineExceeded", err)
+	}
+	select {
+	case <-rt.canceled:
+	default:
+		t.Fatal("request context was not canceled")
 	}
 }
 
-type slowTransport struct{}
+// Клиент ушёл (ctx отменён) → запрос к Google тоже отменяется.
+func TestGetApp_Canceled(t *testing.T) {
+	rt := &hangingTransport{canceled: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
 
-func (slowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	time.Sleep(time.Second)
-	return nil, errors.New("too slow")
+	_, err := newTestClientWith(rt).GetApp(ctx, "com.uchi.app")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	select {
+	case <-rt.canceled:
+	default:
+		t.Fatal("request context was not canceled")
+	}
+}
+
+// hangingTransport не отвечает, пока не отменят контекст запроса, и отмечает отмену в canceled.
+type hangingTransport struct {
+	canceled chan struct{}
+}
+
+func (h *hangingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	select {
+	case <-r.Context().Done():
+		close(h.canceled)
+		return nil, r.Context().Err()
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("request context was never canceled")
+	}
 }
 
 // Страница открылась, но данных нет (капча, новая разметка) → ErrUnavailable.
 func TestGetApp_EmptyPage(t *testing.T) {
-	old := http.DefaultClient.Transport
-	http.DefaultClient.Transport = emptyTransport{}
-	defer func() { http.DefaultClient.Transport = old }()
-
-	_, err := newTestClient().GetApp(context.Background(), "com.uchi.app")
+	_, err := newTestClientWith(emptyTransport{}).GetApp(context.Background(), "com.uchi.app")
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
@@ -295,11 +326,7 @@ func (emptyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // Сетевая ошибка содержит URL с package name. "404" в имени не должно превращать её в «не найдено».
 func TestGetApp_NetworkErrorWith404InID(t *testing.T) {
-	old := http.DefaultClient.Transport
-	http.DefaultClient.Transport = failingTransport{}
-	defer func() { http.DefaultClient.Transport = old }()
-
-	_, err := newTestClient().GetApp(context.Background(), "com.app404")
+	_, err := newTestClientWith(failingTransport{}).GetApp(context.Background(), "com.app404")
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
@@ -372,11 +399,7 @@ func TestSearch_NothingFound(t *testing.T) {
 }
 
 func TestSearch_GoogleDown(t *testing.T) {
-	old := http.DefaultClient.Transport
-	http.DefaultClient.Transport = failingTransport{}
-	defer func() { http.DefaultClient.Transport = old }()
-
-	if _, err := newTestClient().Search(context.Background(), "telegram", 5); !errors.Is(err, ErrUnavailable) {
+	if _, err := newTestClientWith(failingTransport{}).Search(context.Background(), "telegram", 5); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }
