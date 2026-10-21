@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/tidwall/gjson v1.18.0
+	golang.org/x/crypto v0.48.0
 )
 
 require (
@@ -19,7 +20,7 @@ require (
 	github.com/swaggo/swag v1.8.1 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
-	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
