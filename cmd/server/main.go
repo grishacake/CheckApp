@@ -17,10 +17,6 @@ func main() {
 		addr = ":" + port
 	}
 
-	// Библиотека Google Play ходит через http.DefaultClient и не принимает контекст:
-	// без тайм-аута зависший запрос к Google висел бы в фоне бесконечно.
-	http.DefaultClient.Timeout = 15 * time.Second
-
 	// Один клиент на карточку и поиск, чтобы пауза между запросами к Google была общей.
 	gp := googleplay.New()
 	handler := httpapi.NewHandler(gp, 10*time.Second)

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"regexp"
 
@@ -15,8 +13,8 @@ import (
 
 const searchURL = "https://play.google.com/store/search"
 
-// Поиск в библиотеке сломан: Google поменял страницу поиска, и она отдаёт случайные приложения.
-// Поэтому страницу поиска качаем сами и берём из неё только ссылки details?id=... —
+// Поиск в n0madic/google-play-scraper сломан: Google поменял страницу поиска, и она отдаёт случайные
+// приложения. Поэтому из страницы поиска берём только ссылки details?id=... —
 // они идут в порядке выдачи Google Play. Карточки затем берём обычным GetApp.
 var searchIDRe = regexp.MustCompile(`details\?id=([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)`)
 
@@ -55,20 +53,7 @@ func (c *Client) searchIDs(ctx context.Context, query string) ([]string, error) 
 	}
 
 	q := url.Values{"q": {query}, "c": {"apps"}, "hl": {c.Language}, "gl": {c.Countries[0]}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL+"?"+q.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-	// Тот же клиент, что у библиотеки: общий тайм-аут из main и подмена в тестах.
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("search request error: %s", resp.Status)
-	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := c.get(ctx, searchURL+"?"+q.Encode())
 	if err != nil {
 		return nil, err
 	}
