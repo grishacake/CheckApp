@@ -18,7 +18,6 @@ const (
 	MaxNicknameLength = 50
 	maxEmailLength    = 254
 
-	// Нужен только для проверки пароля при неизвестном email; аккаунту не принадлежит.
 	dummyPasswordHash = "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 )
 

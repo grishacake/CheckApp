@@ -3,6 +3,7 @@ module app-grabber-backend
 go 1.24.5
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/tidwall/gjson v1.18.0
 	golang.org/x/crypto v0.48.0
