@@ -24,7 +24,7 @@ import (
 
 const detailURL = "https://play.google.com/store/apps/details"
 
-// maxPageSize — больше страницу не читаем. Обычная карточка весит около 1,3 МБ.
+// maxPageSize — максимальный размер страницы. Обычная карточка весит около 1,3 МБ.
 const maxPageSize = 10 << 20
 
 // ErrUnavailable — Google Play не ответил, ответил ошибкой или страница не разобралась (капча, новая разметка).
@@ -123,7 +123,14 @@ func (c *Client) get(ctx context.Context, u string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, &statusError{Code: resp.StatusCode, Status: resp.Status}
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxPageSize))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPageSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxPageSize {
+		return nil, fmt.Errorf("google play page exceeds %d bytes", maxPageSize)
+	}
+	return body, nil
 }
 
 // wait выдерживает MinInterval между запросами.
