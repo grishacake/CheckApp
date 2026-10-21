@@ -100,6 +100,18 @@ func (s *Service) Login(ctx context.Context, email, password string) (model.User
 	return user, nil
 }
 
+func (s *Service) GetByID(ctx context.Context, id string) (model.User, error) {
+	if err := ctx.Err(); err != nil {
+		return model.User{}, err
+	}
+	user, err := s.users.GetByID(ctx, id)
+	if err != nil {
+		return model.User{}, fmt.Errorf("get user: %w", err)
+	}
+	user.PasswordHash = ""
+	return user, nil
+}
+
 func normalizeEmail(email string) (string, error) {
 	if !utf8.ValidString(email) {
 		return "", ErrInvalidEmail

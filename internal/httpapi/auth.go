@@ -40,6 +40,7 @@ func WithAuth(verifier TokenVerifier, next http.Handler) http.Handler {
 }
 
 func unauthorized(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("WWW-Authenticate", "Bearer")
 	writeError(w, http.StatusUnauthorized, "Требуется авторизация")
 }
