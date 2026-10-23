@@ -1,6 +1,15 @@
 # JWT
 
-Подготовлены `auth.TokenManager`, middleware `httpapi.WithAuth` и `httpapi.AuthHandler`. Для подключения к основному серверу нужна реализация `auth.UserRepository`. Текущий `cmd/server/main.go` пока не регистрирует маршруты авторизации и не читает настройки JWT.
+Авторизация подключена к серверу. Пока БД не готова, используется `auth.MemoryUserRepository`: пользователи хранятся в памяти одного процесса и исчезают при перезапуске. Для постоянного хранения нужно заменить его реализацией `auth.UserRepository` для БД.
+
+## Проверка в Swagger
+
+1. Задайте `JWT_SECRET` и запустите сервер (команды ниже).
+2. Откройте http://localhost:8080/docs.
+3. В `POST /api/auth/register` нажмите **Try it out**, оставьте пример с обязательным ником и нажмите **Execute**. Ожидается 201.
+4. В `POST /api/auth/login` отправьте те же email и пароль. Ожидается 200 с `access_token`.
+5. Скопируйте значение `access_token` без кавычек, нажмите **Authorize** и вставьте его без префикса `Bearer`.
+6. Выполните `GET /api/auth/me`: ожидается 200 с профилем. После **Logout** в окне Authorize тот же запрос вернёт 401.
 
 ## HTTP-контракт
 
@@ -8,13 +17,13 @@
 | --- | --- | --- |
 | POST | `/api/auth/register` | JSON: `email`, обязательный `nickname`, `password`. Ответ 201: пользователь. |
 | POST | `/api/auth/login` | JSON: `email`, `password`. Ответ 200: `access_token`, `token_type: "Bearer"`, `user`. |
-| GET | `/api/auth/me` | Bearer-токен. Ответ 200: пользователь из БД. |
+| GET | `/api/auth/me` | Bearer-токен. Ответ 200: пользователь из хранилища. |
 
 Пользователь содержит `id`, `email`, `nickname`, `created_at`. Хеш пароля не возвращается. После регистрации нужен отдельный вход. Все ответы авторизации имеют `Cache-Control: no-store`.
 
 Для POST нужен `Content-Type: application/json`. Максимальный размер тела — 8 КиБ; неизвестные поля и несколько JSON-объектов отклоняются. Ошибки имеют вид `{"error":"сообщение"}`: 400 — неверные данные, 401 — неверные данные входа или токен, 409 — занятый email, 413 — слишком большое тело, 415 — неверный Content-Type, 500 — внутренняя ошибка, 504 — тайм-аут. Полный контракт доступен в Swagger.
 
-После реализации хранилища создайте сервис через `auth.NewService(repository)`, менеджер токенов через `auth.NewTokenManagerFromEnv()` с проверкой ошибки и обработчик через `httpapi.NewAuthHandler(service, tokens, 5*time.Second)`. Вызов `handler.RegisterRoutes(mux)` подключает три маршрута, включая middleware для `/me`. При подключении нужно также разрешить `POST` и `Authorization` в CORS сервера.
+Сервер создаёт сервис, менеджер JWT и обработчик и вызывает `handler.RegisterRoutes(mux)`. В CORS разрешены `POST` и `Authorization`.
 
 ## Настройки JWT
 
@@ -30,6 +39,7 @@
 ```bash
 export JWT_SECRET="$(openssl rand -hex 32)"
 export JWT_TTL=15m
+go run ./cmd/server
 ```
 
 Сохраните секрет в настройках окружения сервера, чтобы он не менялся при каждом запуске. Смена секрета делает ранее выпущенные токены недействительными. Не добавляйте секрет в Git.

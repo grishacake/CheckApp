@@ -3,7 +3,7 @@
   "info": {
     "title": "App Grabber API",
     "version": "0.1.0",
-    "description": "API-контракт"
+    "description": "Авторизация: 1) зарегистрируйтесь через POST /api/auth/register; 2) выполните POST /api/auth/login; 3) скопируйте access_token; 4) нажмите Authorize и вставьте токен без префикса Bearer; 5) вызовите GET /api/auth/me. Пользователи временно хранятся в памяти и исчезают после перезапуска сервера."
   },
   "servers": [
     {
@@ -34,14 +34,15 @@
         ],
         "operationId": "registerUser",
         "summary": "Зарегистрировать пользователя",
-        "description": "Контракт подготовлен. Для работы маршрутов требуется подключение UserRepository и AuthHandler в сервере. После регистрации выполните вход для получения токена.",
+        "description": "Создаёт пользователя. Ник обязателен. После регистрации выполните вход для получения токена. Пользователи хранятся в памяти до перезапуска сервера.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RegisterRequest"
-              }
+              },
+              "example": { "email": "artem@example.com", "nickname": "Артём", "password": "example-password-123" }
             }
           }
         },
@@ -84,14 +85,15 @@
         ],
         "operationId": "loginUser",
         "summary": "Войти и получить JWT",
-        "description": "Контракт подготовлен. Для работы маршрутов требуется подключение UserRepository и AuthHandler в сервере.",
+        "description": "Возвращает access_token. Скопируйте его в Authorize без префикса Bearer, затем вызовите /api/auth/me.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LoginRequest"
-              }
+              },
+              "example": { "email": "artem@example.com", "password": "example-password-123" }
             }
           }
         },
@@ -134,7 +136,7 @@
         ],
         "operationId": "getCurrentUser",
         "summary": "Получить свой профиль",
-        "description": "Контракт подготовлен. Для работы маршрутов требуется подключение UserRepository и AuthHandler в сервере. Профиль загружается из БД по ID из JWT. Если пользователь удалён, возвращается 401.",
+        "description": "Нажмите Authorize и вставьте access_token из ответа входа. Профиль определяется по ID из JWT. Если токен недействителен или пользователя больше нет в памяти сервера, возвращается 401.",
         "security": [
           {
             "bearerAuth": []
