@@ -5,21 +5,24 @@
 Нужен Go 1.24+.
 
 ```bash
+export JWT_SECRET="$(openssl rand -hex 32)"
 make run           # или: go run ./cmd/server
 ```
+
+Без `JWT_SECRET` сервер не запустится. Пользователи пока хранятся в памяти и исчезают после перезапуска.
 
 Проверка:
 
 ```bash
 curl localhost:8080/health          # ok
-curl -i localhost:8080/api/apps/com.uchi.app   # пока 501 — заглушка
+curl -i localhost:8080/api/apps/com.uchi.app
 ```
 
 Через Docker:
 
 ```bash
 docker build -t app-grabber-backend .
-docker run -p 8080:8080 app-grabber-backend
+docker run -p 8080:8080 -e JWT_SECRET app-grabber-backend
 ```
 
 ## Swagger / OpenAPI
@@ -30,9 +33,14 @@ docker run -p 8080:8080 app-grabber-backend
 
 ## API
 
+Авторизация и пошаговая проверка в Swagger: [JWT, настройки и middleware](docs/auth.md).
+
 | Метод | Путь | Что делает |
 |-------|------|------------|
 | GET | `/health` | Проверить, что сервер жив. |
+| POST | `/api/auth/register` | Регистрация: email, обязательный ник, пароль. |
+| POST | `/api/auth/login` | Вход и получение JWT. |
+| GET | `/api/auth/me` | Профиль по Bearer-токену. |
 | GET | `/api/apps/{package_name}` | Карточка приложения из Google Play: 400 неверный формат, 404 не найдено, 502 Google не ответил. |
 | GET | `/api/search?q=google chrome` | Поиск по словам: до 5 карточек в порядке выдачи Google Play, `{"query": ..., "results": [...]}`. |
 
