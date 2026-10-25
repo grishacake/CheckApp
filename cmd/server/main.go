@@ -49,9 +49,8 @@ func run(ctx context.Context) error {
 	defer pool.Close()
 	log.Print("PostgreSQL connection established")
 
-	users := auth.NewMemoryUserRepository()
+	users := postgres.NewUserRepository(pool)
 	authHandler := httpapi.NewAuthHandler(auth.NewService(users), tokens, 5*time.Second)
-	log.Print("users are stored in memory and will be lost on restart")
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
