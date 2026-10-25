@@ -3,7 +3,7 @@
   "info": {
     "title": "App Grabber API",
     "version": "0.1.0",
-    "description": "API-контракт"
+    "description": "Авторизация: 1) зарегистрируйтесь через POST /api/auth/register; 2) выполните POST /api/auth/login; 3) скопируйте access_token; 4) нажмите Authorize и вставьте токен без префикса Bearer; 5) вызовите GET /api/auth/me. Пользователи временно хранятся в памяти и исчезают после перезапуска сервера."
   },
   "servers": [
     {
@@ -12,6 +12,7 @@
     }
   ],
   "tags": [
+    { "name": "Auth", "description": "Регистрация, вход и профиль пользователя" },
     {
       "name": "Apps",
       "description": "Карточка приложения Google Play"
@@ -26,6 +27,144 @@
     }
   ],
   "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "registerUser",
+        "summary": "Зарегистрировать пользователя",
+        "description": "Создаёт пользователя. Ник обязателен. После регистрации выполните вход для получения токена. Пользователи хранятся в памяти до перезапуска сервера.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              },
+              "example": { "email": "artem@example.com", "nickname": "Артём", "password": "example-password-123" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Пользователь создан.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/AuthConflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/AuthTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/AuthMediaType"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "loginUser",
+        "summary": "Войти и получить JWT",
+        "description": "Возвращает access_token. Скопируйте его в Authorize без префикса Bearer, затем вызовите /api/auth/me.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
+              "example": { "email": "artem@example.com", "password": "example-password-123" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Токен и пользователь. Ответ не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthInvalidCredentials"
+          },
+          "413": {
+            "$ref": "#/components/responses/AuthTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/AuthMediaType"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "getCurrentUser",
+        "summary": "Получить свой профиль",
+        "description": "Нажмите Authorize и вставьте access_token из ответа входа. Профиль определяется по ID из JWT. Если токен недействителен или пользователя больше нет в памяти сервера, возвращается 401.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Профиль пользователя. Ответ не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -210,7 +349,206 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "responses": {
+      "AuthBadRequest": {
+        "description": "Некорректный JSON, неизвестные поля или неверные значения. Допускается только один JSON-объект.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthTooLarge": {
+        "description": "Тело запроса превышает 8 КиБ.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthMediaType": {
+        "description": "Ожидается Content-Type: application/json.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthInternalError": {
+        "description": "Внутренняя ошибка сервера.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthTimeout": {
+        "description": "Превышено время ожидания.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthConflict": {
+        "description": "Пользователь с таким email уже существует.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthInvalidCredentials": {
+        "description": "Неверный email или пароль.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthUnauthorized": {
+        "description": "Отсутствует или недействителен Bearer-токен либо пользователь больше не существует.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer"
+          }
+        }
+      }
+    },
     "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "nickname",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "example": "artem@example.com",
+            "description": "Пробелы по краям удаляются, email приводится к нижнему регистру."
+          },
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "example": "Артём",
+            "description": "Обязательный ник после удаления пробелов по краям; без управляющих символов. Уникальность не требуется."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 15,
+            "maxLength": 128,
+            "description": "Пробелы являются частью пароля."
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "artem@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "maxLength": 128
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "email",
+          "nickname",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "e94b6fc3-0c20-4f57-817c-856e55297e59"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "artem@example.com"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "Артём"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-21T12:00:00Z"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "access_token",
+          "token_type",
+          "user"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "JWT для Authorization: Bearer <token>. Срок действия указан в exp; по умолчанию 15 минут."
+          },
+          "token_type": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
       "App": {
         "type": "object",
         "additionalProperties": false,
