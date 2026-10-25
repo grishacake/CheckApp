@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/auth"
 	"app-grabber-backend/internal/favorites"
 	"app-grabber-backend/internal/model"
@@ -81,7 +82,7 @@ func (h *FavoriteHandler) Remove(w http.ResponseWriter, r *http.Request) { h.mut
 func (h *FavoriteHandler) mutate(w http.ResponseWriter, r *http.Request, add bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	store, packageName := r.PathValue("store"), r.PathValue("packageName")
-	if !storeCodePattern.MatchString(store) || !packageNamePattern.MatchString(packageName) {
+	if !storeCodePattern.MatchString(store) || !app.ValidPackageName(packageName) {
 		writeError(w, http.StatusBadRequest, "Некорректный store или package_name")
 		return
 	}

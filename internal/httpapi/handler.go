@@ -7,14 +7,11 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"regexp"
 	"time"
 
 	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/auth"
 )
-
-var packageNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 
 type HistoryRecorder interface {
 	Record(context.Context, string, string, string) error
@@ -42,7 +39,7 @@ func (h *Handler) WithHistory(recorder HistoryRecorder, store string) *Handler {
 
 func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 	packageName := r.PathValue("id")
-	if !packageNamePattern.MatchString(packageName) {
+	if !app.ValidPackageName(packageName) {
 		writeError(w, http.StatusBadRequest, "Некорректный формат package_name")
 		return
 	}

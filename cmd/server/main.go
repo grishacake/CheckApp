@@ -53,7 +53,7 @@ func run(ctx context.Context) error {
 	log.Print("PostgreSQL connection established")
 	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play", cacheTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
-	searchHandler := httpapi.NewSearchHandler(catalog, 12*time.Second)
+	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second)
 
 	users := postgres.NewUserRepository(pool)
 	authService := auth.NewService(users)
