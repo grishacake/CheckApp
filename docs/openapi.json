@@ -258,6 +258,15 @@
               }
             }
           },
+          "500": {
+            "description": "Ошибка сохранения карточек в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Не удалось сохранить данные приложения" }
+              }
+            }
+          },
           "502": {
             "description": "Ответ - сбой Google Play, блокировка, тайм-аут или ошибка разбора карточки.",
             "content": {
@@ -328,6 +337,15 @@
                 "example": {
                   "error": "Пустой поисковый запрос"
                 }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сохранения карточек в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Не удалось сохранить результаты поиска" }
               }
             }
           },

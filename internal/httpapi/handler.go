@@ -44,13 +44,16 @@ func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
 		return
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil && !errors.Is(err, app.ErrPersistence) {
 		err = ctx.Err()
 	}
 
 	if err != nil {
 		var networkError net.Error
 		switch {
+		case errors.Is(err, app.ErrPersistence):
+			log.Printf("save app %s: %v", packageName, err)
+			writeError(w, http.StatusInternalServerError, "Не удалось сохранить данные приложения")
 		case errors.Is(err, context.DeadlineExceeded),
 			errors.As(err, &networkError) && networkError.Timeout():
 			writeError(w, http.StatusBadGateway, "Превышено время ожидания Google Play")

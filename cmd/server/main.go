@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"app-grabber-backend/docs"
+	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/auth"
 	"app-grabber-backend/internal/googleplay"
 	"app-grabber-backend/internal/httpapi"
@@ -36,8 +37,6 @@ func run(ctx context.Context) error {
 
 	// Один клиент на карточку и поиск, чтобы пауза между запросами к Google была общей.
 	gp := googleplay.New()
-	handler := httpapi.NewHandler(gp, 10*time.Second)
-	searchHandler := httpapi.NewSearchHandler(gp, 12*time.Second)
 	tokens, err := auth.NewTokenManagerFromEnv()
 	if err != nil {
 		return fmt.Errorf("configure JWT: %w", err)
@@ -48,6 +47,9 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 	log.Print("PostgreSQL connection established")
+	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play")
+	handler := httpapi.NewHandler(catalog, 10*time.Second)
+	searchHandler := httpapi.NewSearchHandler(catalog, 12*time.Second)
 
 	users := postgres.NewUserRepository(pool)
 	authHandler := httpapi.NewAuthHandler(auth.NewService(users), tokens, 5*time.Second)

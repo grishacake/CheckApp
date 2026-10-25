@@ -58,11 +58,27 @@ go run ./cmd/server
 
 Адрес с `localhost:5435` используется только при запуске Go на компьютере. `go run` сам не читает `.env` и не применяет миграции; сначала выполните полный запуск Compose. Ручная генерация JWT_SECRET создаёт другой секрет, поэтому ранее выданные токены могут потребовать повторного входа.
 
-Для интеграционного теста укажите отдельную тестовую БД с применёнными миграциями:
+Для интеграционных тестов пользователей и карточек укажите отдельную тестовую БД с применёнными миграциями:
 
 ```bash
 TEST_DATABASE_URL='postgres://user:password@localhost:5435/checkapp_test?sslmode=disable' \
-  go test -mod=readonly ./internal/postgres -run TestUsersIntegration -v
+  go test -mod=readonly ./internal/postgres -run 'Test(Users|Apps)Integration' -v
 ```
 
 Без TEST_DATABASE_URL тест пропускается. Обычные тесты: `go test -mod=readonly ./...`.
+
+## Сохранение карточек Google Play
+
+Карточка по package name и результаты поиска сохраняются в `apps` и `store_apps` в одной транзакции. Обновляется существующая пара `(store_id, store_app_id)`: ID остаются прежними, название, JSON metadata и время парсинга обновляются. Разные package name с одинаковым названием не объединяются автоматически. RuStore остаётся неактивной заглушкой.
+
+Проверка: пересоберите Compose, дважды откройте http://localhost:8080/api/apps/com.uchi.app и выполните в DBeaver:
+
+```sql
+SELECT sa.id, sa.app_id, sa.store_app_id, a.name, sa.metadata, sa.scraped_at
+FROM public.store_apps sa
+JOIN public.apps a ON a.id = sa.app_id
+JOIN public.stores s ON s.id = sa.store_id
+WHERE s.code = 'google_play' AND sa.store_app_id = 'com.uchi.app';
+```
+
+Ожидается одна запись с теми же ID после повторного запроса. Если Google Play недоступен, новая карточка не сохраняется. Если не удалось записать результат в БД, API возвращает 500. Поиск и карточки пока всегда запрашиваются у парсера; кеширование — отдельный этап.

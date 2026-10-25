@@ -62,6 +62,11 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return // клиент ушёл
 	}
 	if err != nil {
+		if errors.Is(err, app.ErrPersistence) {
+			log.Printf("save search results %q: %v", query, err)
+			writeError(w, http.StatusInternalServerError, "Не удалось сохранить результаты поиска")
+			return
+		}
 		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
 			writeError(w, http.StatusBadGateway, "Превышено время ожидания Google Play")
 			return
