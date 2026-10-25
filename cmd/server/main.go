@@ -1,18 +1,34 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"app-grabber-backend/docs"
 	"app-grabber-backend/internal/auth"
 	"app-grabber-backend/internal/googleplay"
 	"app-grabber-backend/internal/httpapi"
+	"app-grabber-backend/internal/postgres"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx); err != nil {
+		log.Print(err)
+		stop()
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
 	addr := ":8080"
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port
@@ -24,8 +40,15 @@ func main() {
 	searchHandler := httpapi.NewSearchHandler(gp, 12*time.Second)
 	tokens, err := auth.NewTokenManagerFromEnv()
 	if err != nil {
-		log.Fatalf("configure JWT: %v", err)
+		return fmt.Errorf("configure JWT: %w", err)
 	}
+	pool, err := postgres.Open(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	log.Print("PostgreSQL connection established")
+
 	users := auth.NewMemoryUserRepository()
 	authHandler := httpapi.NewAuthHandler(auth.NewService(users), tokens, 5*time.Second)
 	log.Print("users are stored in memory and will be lost on restart")
@@ -50,8 +73,35 @@ func main() {
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	log.Printf("listening on %s", addr)
-	log.Fatal(server.ListenAndServe())
+	return serve(ctx, server)
+}
+
+func serve(ctx context.Context, server *http.Server) error {
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Printf("listening on %s", server.Addr)
+		serverErr <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serve HTTP: %w", err)
+	case <-ctx.Done():
+		log.Print("shutting down HTTP server")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+			return fmt.Errorf("shutdown HTTP server: %w", err)
+		}
+		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serve HTTP: %w", err)
+		}
+		return nil
+	}
 }
 
 func withCORS(next http.Handler) http.Handler {

@@ -37,6 +37,8 @@
 Подготовка окружения в Git Bash:
 
 ```bash
+docker compose up -d --wait db
+export DATABASE_URL='postgres://checkapp:checkapp@localhost:5435/checkapp?sslmode=disable'
 export JWT_SECRET="$(openssl rand -hex 32)"
 export JWT_TTL=15m
 go run ./cmd/server

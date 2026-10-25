@@ -2,14 +2,16 @@
 
 ## Запуск
 
-Нужен Go 1.24+.
+Нужен Go 1.24.5+ и запущенный Docker для PostgreSQL.
 
 ```bash
+docker compose up -d --wait db
+export DATABASE_URL='postgres://checkapp:checkapp@localhost:5435/checkapp?sslmode=disable'
 export JWT_SECRET="$(openssl rand -hex 32)"
 make run           # или: go run ./cmd/server
 ```
 
-Без `JWT_SECRET` сервер не запустится. Пользователи пока хранятся в памяти и исчезают после перезапуска.
+Без `JWT_SECRET`, `DATABASE_URL` или доступной БД сервер не запустится. Соединение проверяется при старте с тайм-аутом 5 секунд. Пользователи пока хранятся в памяти и исчезают после перезапуска. При `Ctrl+C` сервер завершает запросы и закрывает пул БД.
 
 Проверка:
 
@@ -18,12 +20,7 @@ curl localhost:8080/health          # ok
 curl -i localhost:8080/api/apps/com.uchi.app
 ```
 
-Через Docker:
-
-```bash
-docker build -t app-grabber-backend .
-docker run -p 8080:8080 -e JWT_SECRET app-grabber-backend
-```
+Миграции, DBeaver и повторный запуск: [локальная БД](docs/database.md). В Docker Compose пока запускается только PostgreSQL; бэкенд запускается отдельно командой выше.
 
 ## Swagger / OpenAPI
 
