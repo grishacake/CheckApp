@@ -197,7 +197,7 @@
         ],
         "operationId": "getApp",
         "summary": "Получить карточку по package name",
-        "description": "",
+        "description": "Свежая карточка возвращается из PostgreSQL без повторного парсинга. При отсутствии или устаревании данных запрос идёт в Google Play, результат сохраняется. APP_CACHE_TTL: по умолчанию 24h, 0 отключает чтение кеша.",
         "parameters": [
           {
             "name": "id",
@@ -259,7 +259,7 @@
             }
           },
           "500": {
-            "description": "Ошибка сохранения карточек в PostgreSQL",
+            "description": "Ошибка чтения или сохранения карточки в PostgreSQL",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" },

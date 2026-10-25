@@ -26,6 +26,42 @@ func NewAppRepository(pool *pgxpool.Pool) *AppRepository {
 	return &AppRepository{pool: pool}
 }
 
+// GetFresh checks freshness against the database clock, not the server timezone.
+func (r *AppRepository) GetFresh(ctx context.Context, storeCode, packageName string, ttl time.Duration) (model.App, error) {
+	if err := ctx.Err(); err != nil {
+		return model.App{}, err
+	}
+	if ttl <= 0 {
+		return model.App{}, app.ErrNotFound
+	}
+	var metadata []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT sa.metadata
+		FROM public.store_apps sa
+		JOIN public.stores s ON s.id = sa.store_id
+		WHERE s.code = $1 AND s.is_active = TRUE AND sa.store_app_id = $2
+		  AND sa.scraped_at > NOW() - make_interval(secs => $3::double precision)
+		  AND sa.scraped_at <= NOW()`, storeCode, packageName, ttl.Seconds()).Scan(&metadata)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.App{}, app.ErrNotFound
+	}
+	if err != nil {
+		return model.App{}, fmt.Errorf("read cached app: %w", err)
+	}
+	return decodeStoredApp(metadata, packageName)
+}
+
+func decodeStoredApp(metadata []byte, packageName string) (model.App, error) {
+	var card model.App
+	if err := json.Unmarshal(metadata, &card); err != nil {
+		return model.App{}, fmt.Errorf("decode cached app: %w", err)
+	}
+	if card.PackageName != packageName || strings.TrimSpace(card.Name) == "" {
+		return model.App{}, errors.New("cached app metadata is incomplete or has a different package name")
+	}
+	return card, nil
+}
+
 // Save writes the whole result in one transaction, keeping existing card IDs.
 func (r *AppRepository) Save(ctx context.Context, storeCode string, cards []model.App) error {
 	if err := ctx.Err(); err != nil {

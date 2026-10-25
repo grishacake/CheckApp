@@ -32,3 +32,18 @@ func TestPersistenceFailureIsNotGooglePlayFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestCacheReadFailureIsInternalError(t *testing.T) {
+	err := fmt.Errorf("%w: internal database details: %w", app.ErrCacheRead, context.DeadlineExceeded)
+	router := newRouter(providerFunc(func(context.Context, string) (model.App, error) {
+		return model.App{}, err
+	}), time.Second)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/apps/com.example.app", nil))
+	if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "прочитать") {
+		t.Fatalf("wrong cache failure response: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "internal database details") || strings.Contains(w.Body.String(), "Google Play") {
+		t.Fatal("cache error exposed details or blamed Google Play")
+	}
+}

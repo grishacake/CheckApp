@@ -30,6 +30,10 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	cacheTTL, err := app.ParseCacheTTL(os.Getenv("APP_CACHE_TTL"))
+	if err != nil {
+		return err
+	}
 	addr := ":8080"
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port
@@ -47,7 +51,7 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 	log.Print("PostgreSQL connection established")
-	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play")
+	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play", cacheTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
 	searchHandler := httpapi.NewSearchHandler(catalog, 12*time.Second)
 

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/model"
 )
 
@@ -88,6 +90,23 @@ func TestAppsIntegration(t *testing.T) {
 	if first.card != card || first.name != card.Name || first.appID == "" || first.scraped.IsZero() {
 		t.Fatal("initial card was not persisted correctly")
 	}
+	if cached, err := repo.GetFresh(ctx, storeCode, card.PackageName, time.Hour); err != nil || cached != card {
+		t.Fatalf("fresh cache lookup failed: %v", err)
+	}
+	if !read(card.PackageName).scraped.Equal(first.scraped) {
+		t.Fatal("cache read changed scraped_at")
+	}
+	if _, err := repo.GetFresh(ctx, storeCode, "com.test.missing", time.Hour); !errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("missing card: %v", err)
+	}
+	for _, timestamp := range []string{"NOW() - INTERVAL '25 hours'", "NOW() + INTERVAL '1 hour'"} {
+		if _, err := pool.Exec(ctx, `UPDATE public.store_apps SET scraped_at = `+timestamp+` WHERE id = $1`, first.id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.GetFresh(ctx, storeCode, card.PackageName, 24*time.Hour); !errors.Is(err, app.ErrNotFound) {
+			t.Fatalf("stale or future-dated card was served: %v", err)
+		}
+	}
 	card.Name = storeCode + " updated"
 	card.Rating = 4.8
 	if err := repo.Save(ctx, storeCode, []model.App{card}); err != nil {
@@ -150,10 +169,19 @@ func TestAppsIntegration(t *testing.T) {
 	if cardCount != 3 || appCount != 3 {
 		t.Fatalf("duplicate rows or partial writes: cards=%d products=%d", cardCount, appCount)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE public.store_apps SET metadata = '{}'::jsonb WHERE store_id = $1 AND store_app_id = $2`, storeID, third.PackageName); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.GetFresh(ctx, storeCode, third.PackageName, time.Hour); err == nil || errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("corrupt metadata was accepted or reported as a cache miss: %v", err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE public.stores SET is_active = FALSE WHERE id = $1`, storeID); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.Save(ctx, storeCode, []model.App{card}); err == nil {
 		t.Fatal("inactive store accepted a save")
+	}
+	if _, err := repo.GetFresh(ctx, storeCode, card.PackageName, time.Hour); !errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("inactive store served a cached card: %v", err)
 	}
 }

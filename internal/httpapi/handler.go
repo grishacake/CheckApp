@@ -44,13 +44,16 @@ func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
 		return
 	}
-	if ctx.Err() != nil && !errors.Is(err, app.ErrPersistence) {
+	if ctx.Err() != nil && !errors.Is(err, app.ErrPersistence) && !errors.Is(err, app.ErrCacheRead) {
 		err = ctx.Err()
 	}
 
 	if err != nil {
 		var networkError net.Error
 		switch {
+		case errors.Is(err, app.ErrCacheRead):
+			log.Printf("read cached app %s: %v", packageName, err)
+			writeError(w, http.StatusInternalServerError, "Не удалось прочитать сохранённые данные приложения")
 		case errors.Is(err, app.ErrPersistence):
 			log.Printf("save app %s: %v", packageName, err)
 			writeError(w, http.StatusInternalServerError, "Не удалось сохранить данные приложения")

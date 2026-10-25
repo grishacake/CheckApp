@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"app-grabber-backend/internal/model"
 )
@@ -21,6 +22,10 @@ func (s catalogSource) Search(context.Context, string, int) ([]model.App, error)
 }
 
 type saveCardsFunc func(context.Context, string, []model.App) error
+
+func (f saveCardsFunc) GetFresh(context.Context, string, string, time.Duration) (model.App, error) {
+	return model.App{}, ErrNotFound
+}
 
 func (f saveCardsFunc) Save(ctx context.Context, store string, cards []model.App) error {
 	return f(ctx, store, cards)
@@ -39,7 +44,7 @@ func TestCatalogSavesFreshResults(t *testing.T) {
 		saved = append(saved, append([]model.App(nil), cards...))
 		return nil
 	})
-	catalog := NewCatalog(source, source, repo, "google_play")
+	catalog := NewCatalog(source, source, repo, "google_play", time.Hour)
 	card, err := catalog.GetApp(ctx, first.PackageName)
 	if err != nil || card != first {
 		t.Fatalf("GetApp changed the parsed response: %v", err)
@@ -60,7 +65,7 @@ func TestCatalogDoesNotSaveFailedOrEmptyResults(t *testing.T) {
 			t.Fatal("failed parsing must not write to the database")
 			return nil
 		})
-		catalog := NewCatalog(source, source, repo, "google_play")
+		catalog := NewCatalog(source, source, repo, "google_play", time.Hour)
 		if _, err := catalog.GetApp(context.Background(), "com.example.app"); !errors.Is(err, sourceErr) {
 			t.Fatalf("GetApp lost source error: %v", err)
 		}
@@ -72,7 +77,7 @@ func TestCatalogDoesNotSaveFailedOrEmptyResults(t *testing.T) {
 	catalog := NewCatalog(source, source, saveCardsFunc(func(context.Context, string, []model.App) error {
 		t.Fatal("empty search must not write to the database")
 		return nil
-	}), "google_play")
+	}), "google_play", time.Hour)
 	if cards, err := catalog.Search(context.Background(), "missing", 5); err != nil || len(cards) != 0 {
 		t.Fatalf("empty search failed: %v", err)
 	}
@@ -84,7 +89,7 @@ func TestCatalogPersistenceFailure(t *testing.T) {
 	storageErr := errors.New("database unavailable")
 	catalog := NewCatalog(source, source, saveCardsFunc(func(context.Context, string, []model.App) error {
 		return storageErr
-	}), "google_play")
+	}), "google_play", time.Hour)
 	got, err := catalog.GetApp(context.Background(), card.PackageName)
 	if got != (model.App{}) || !errors.Is(err, ErrPersistence) || !errors.Is(err, storageErr) {
 		t.Fatalf("GetApp did not report storage failure: %v", err)
