@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -19,6 +20,16 @@ func main() {
 
 	// Один клиент на карточку и поиск, чтобы пауза между запросами к Google была общей.
 	gp := googleplay.New()
+	if front, ok := os.LookupEnv("GP_FRONT_HOST"); ok {
+		gp.FrontHost = front // пустое значение — ходить на play.google.com напрямую
+	}
+	if proxy := os.Getenv("GP_PROXY_URL"); proxy != "" {
+		if err := gp.UseProxy(proxy); err != nil {
+			log.Fatalf("GP_PROXY_URL: %v", err)
+		}
+		u, _ := url.Parse(proxy)
+		log.Printf("google play via proxy %s", u.Redacted())
+	}
 	handler := httpapi.NewHandler(gp, 10*time.Second)
 	searchHandler := httpapi.NewSearchHandler(gp, 12*time.Second)
 

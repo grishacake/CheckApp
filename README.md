@@ -22,6 +22,19 @@ docker build -t app-grabber-backend .
 docker run -p 8080:8080 app-grabber-backend
 ```
 
+## Доступ к Google Play из России
+
+Из России `play.google.com` блокируют по имени сайта (SNI), поэтому сервер соединяется
+с `www.google.com` и просит в заголовке `Host` страницу `play.google.com` — VPN не нужен.
+Если этот обход перестанет работать, укажите прокси. Настройки — в `.env` (образец в `.env.example`):
+
+| Переменная | Что задаёт |
+|------------|------------|
+| `GP_PROXY_URL` | Прокси для запросов к Google: `http://ЛОГИН:ПАРОЛЬ@IP:ПОРТ`. Пусто — без прокси. |
+| `GP_FRONT_HOST` | Хост вместо `play.google.com`, по умолчанию `www.google.com`. Пустое значение — ходить напрямую. |
+
+`make run` читает `.env` сам, в Docker: `docker run --env-file .env -p 8080:8080 app-grabber-backend`.
+
 ## Swagger / OpenAPI
 
 После запуска откройте http://localhost:8080/docs - интерактивная документация и примеры восьми полей.

@@ -11,7 +11,7 @@ import (
 	"app-grabber-backend/internal/model"
 )
 
-const searchURL = "https://play.google.com/store/search"
+const searchURL = "https://" + playHost + "/store/search"
 
 // Поиск в n0madic/google-play-scraper сломан: Google поменял страницу поиска, и она отдаёт случайные
 // приложения. Поэтому из страницы поиска берём только ссылки details?id=... —
