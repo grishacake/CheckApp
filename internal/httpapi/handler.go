@@ -7,13 +7,10 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"regexp"
 	"time"
 
 	"app-grabber-backend/internal/app"
 )
-
-var packageNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 
 type Handler struct {
 	provider app.Provider
@@ -29,7 +26,7 @@ func NewHandler(provider app.Provider, timeout time.Duration) *Handler {
 
 func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 	packageName := r.PathValue("id")
-	if !packageNamePattern.MatchString(packageName) {
+	if !app.ValidPackageName(packageName) {
 		writeError(w, http.StatusBadRequest, "Некорректный формат package_name")
 		return
 	}

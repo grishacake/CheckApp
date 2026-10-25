@@ -20,7 +20,7 @@ func main() {
 	// Один клиент на карточку и поиск, чтобы пауза между запросами к Google была общей.
 	gp := googleplay.New()
 	handler := httpapi.NewHandler(gp, 10*time.Second)
-	searchHandler := httpapi.NewSearchHandler(gp, 12*time.Second)
+	searchHandler := httpapi.NewSearchHandler(gp, gp, 12*time.Second)
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
