@@ -36,3 +36,43 @@ func TestAuthCORS(t *testing.T) {
 		t.Fatal("actual request failed")
 	}
 }
+
+func TestFavoritesCORSPreflight(t *testing.T) {
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			called := false
+			handler := withCORS(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				called = true
+			}))
+			r := httptest.NewRequest(http.MethodOptions, "/api/favorites/google_play/com.uchi.app", nil)
+			r.Header.Set("Origin", "http://localhost:3000")
+			r.Header.Set("Access-Control-Request-Method", method)
+			r.Header.Set("Access-Control-Request-Headers", "authorization")
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, r)
+
+			if w.Code != http.StatusNoContent || called {
+				t.Fatalf("preflight status = %d, downstream called = %t", w.Code, called)
+			}
+			if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+				t.Errorf("allow origin = %q, want *", w.Header().Get("Access-Control-Allow-Origin"))
+			}
+			if !headerContainsValue(w.Header().Get("Access-Control-Allow-Methods"), method) {
+				t.Errorf("allow methods %q does not include %s", w.Header().Get("Access-Control-Allow-Methods"), method)
+			}
+			if !headerContainsValue(w.Header().Get("Access-Control-Allow-Headers"), "Authorization") {
+				t.Errorf("allow headers %q does not include Authorization", w.Header().Get("Access-Control-Allow-Headers"))
+			}
+		})
+	}
+}
+
+func headerContainsValue(header, want string) bool {
+	for _, value := range strings.Split(header, ",") {
+		if strings.TrimSpace(value) == want {
+			return true
+		}
+	}
+	return false
+}
