@@ -11,13 +11,20 @@ import (
 	"time"
 
 	"app-grabber-backend/internal/app"
+	"app-grabber-backend/internal/auth"
 )
 
 var packageNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 
+type HistoryRecorder interface {
+	Record(context.Context, string, string, string) error
+}
+
 type Handler struct {
 	provider app.Provider
 	timeout  time.Duration
+	history  HistoryRecorder
+	store    string
 }
 
 func NewHandler(provider app.Provider, timeout time.Duration) *Handler {
@@ -25,6 +32,12 @@ func NewHandler(provider app.Provider, timeout time.Duration) *Handler {
 		timeout = 10 * time.Second
 	}
 	return &Handler{provider: provider, timeout: timeout}
+}
+
+func (h *Handler) WithHistory(recorder HistoryRecorder, store string) *Handler {
+	h.history = recorder
+	h.store = store
+	return h
 }
 
 func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +89,35 @@ func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 		log.Printf("encode app %s: %v", packageName, err)
 		writeError(w, http.StatusBadGateway, "Не удалось получить данные из Google Play")
 		return
+	}
+	if r.Method == http.MethodGet && h.history != nil {
+		userID, _ := UserIDFromContext(ctx)
+		if r.Context().Err() != nil {
+			return
+		}
+		if ctx.Err() != nil {
+			writeError(w, http.StatusGatewayTimeout, "Превышено время ожидания")
+			return
+		}
+		err := h.history.Record(ctx, userID, h.store, packageName)
+		if r.Context().Err() != nil {
+			return
+		}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if err != nil {
+			switch {
+			case errors.Is(err, auth.ErrUserNotFound):
+				unauthorized(w)
+			case errors.Is(err, context.DeadlineExceeded):
+				writeError(w, http.StatusGatewayTimeout, "Превышено время ожидания")
+			default:
+				log.Printf("record app view %s: %v", packageName, err)
+				writeError(w, http.StatusInternalServerError, "Не удалось записать просмотр приложения")
+			}
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, body)
 }

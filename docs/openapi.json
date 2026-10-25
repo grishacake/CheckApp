@@ -25,7 +25,8 @@
       "name": "Health",
       "description": "Проверка сервера"
     },
-    { "name": "Favorites", "description": "Избранные сохранённые карточки приложений" }
+    { "name": "Favorites", "description": "Избранные сохранённые карточки приложений" },
+    { "name": "History", "description": "История просмотров карточек приложений" }
   ],
   "paths": {
     "/api/auth/register": {
@@ -198,7 +199,11 @@
         ],
         "operationId": "getApp",
         "summary": "Получить карточку по package name",
-        "description": "Свежая карточка возвращается из PostgreSQL без повторного парсинга. При отсутствии или устаревании данных запрос идёт в Google Play, результат сохраняется. APP_CACHE_TTL: по умолчанию 24h, 0 отключает чтение кеша.",
+        "description": "Свежая карточка возвращается из PostgreSQL без повторного парсинга. При отсутствии или устаревании данных запрос идёт в Google Play, результат сохраняется. Каждый успешный GET записывается в историю просмотров: без токена — анонимно, с токеном — для пользователя. Переданный неверный или просроченный токен даёт 401. APP_CACHE_TTL: по умолчанию 24h, 0 отключает чтение кеша.",
+        "security": [
+          {},
+          { "bearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -260,13 +265,16 @@
             }
           },
           "500": {
-            "description": "Ошибка чтения или сохранения карточки в PostgreSQL",
+            "description": "Ошибка чтения, сохранения карточки или записи просмотра в PostgreSQL",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" },
                 "example": { "error": "Не удалось сохранить данные приложения" }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
           },
           "502": {
             "description": "Ответ - сбой Google Play, блокировка, тайм-аут или ошибка разбора карточки.",
@@ -291,7 +299,30 @@
                 }
               }
             }
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
           }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "tags": ["History"],
+        "operationId": "listHistory",
+        "summary": "Получить историю просмотров",
+        "description": "Возвращает карточки, просмотренные текущим пользователем, по времени просмотра от новых к старым. Анонимные просмотры не отображаются. Ответ не кешируется.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Страница истории просмотров.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HistoryPage" } } } },
+          "400": { "$ref": "#/components/responses/AuthBadRequest" },
+          "401": { "$ref": "#/components/responses/AuthUnauthorized" },
+          "500": { "$ref": "#/components/responses/AuthInternalError" },
+          "504": { "$ref": "#/components/responses/AuthTimeout" }
         }
       }
     },
@@ -869,6 +900,26 @@
           "offset": {
             "type": "integer"
           }
+        }
+      },
+      "View": {
+        "type": "object",
+        "required": ["id", "store_app_id", "store", "app", "viewed_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "store_app_id": { "type": "integer", "format": "int64" },
+          "store": { "type": "string" },
+          "app": { "$ref": "#/components/schemas/App" },
+          "viewed_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HistoryPage": {
+        "type": "object",
+        "required": ["history", "limit", "offset"],
+        "properties": {
+          "history": { "type": "array", "items": { "$ref": "#/components/schemas/View" } },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" }
         }
       },
       "SearchResult": {

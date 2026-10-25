@@ -59,18 +59,22 @@ func run(ctx context.Context) error {
 	authService := auth.NewService(users)
 	authHandler := httpapi.NewAuthHandler(authService, tokens, 5*time.Second)
 	favoritesHandler := httpapi.NewFavoriteHandler(postgres.NewFavoritesRepository(pool), authService, tokens, 5*time.Second)
+	historyRepo := postgres.NewHistoryRepository(pool)
+	historyHandler := httpapi.NewHistoryHandler(historyRepo, authService, tokens, 5*time.Second)
+	handler.WithHistory(historyRepo, "google_play")
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
 	authHandler.RegisterRoutes(mux)
 	favoritesHandler.RegisterRoutes(mux)
+	historyHandler.RegisterRoutes(mux)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if _, err := w.Write([]byte("ok")); err != nil {
 			log.Printf("write health response: %v", err)
 		}
 	})
-	mux.HandleFunc("GET /api/apps/{id}", handler.GetApp)
+	mux.Handle("GET /api/apps/{id}", historyHandler.WrapCard(http.HandlerFunc(handler.GetApp)))
 	mux.HandleFunc("GET /api/search", searchHandler.Search)
 
 	server := &http.Server{

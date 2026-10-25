@@ -102,3 +102,16 @@ WHERE sa.store_id = s.id AND s.code = 'google_play'
 ## Избранное в Swagger
 
 Создайте пользователя и получите JWT через POST `/api/auth/login`. Сначала запросите карточку GET `/api/apps/com.uchi.app`, чтобы сохранить её в БД. В Swagger нажмите Authorize и вставьте токен, затем выполните PUT `/api/favorites/google_play/com.uchi.app`, GET `/api/favorites` и DELETE по тому же адресу. Для ручной проверки фронтенд не нужен.
+
+## История просмотров
+
+Войдите через POST `/api/auth/login`, нажмите Authorize и выполните дважды GET `/api/apps/com.uchi.app`, затем GET `/api/history`. В ответе должны быть два отдельных события. Без Authorize успешный GET карточки остаётся анонимным и в `/api/history` пользователя не появляется. Проверить строки в DBeaver:
+
+```sql
+SELECT h.id, h.user_id, h.store_app_id, h.viewed_at, s.code, sa.store_app_id AS package_name
+FROM public.user_view_history h
+JOIN public.store_apps sa ON sa.id = h.store_app_id
+JOIN public.stores s ON s.id = sa.store_id
+WHERE sa.store_app_id = 'com.uchi.app'
+ORDER BY h.viewed_at DESC, h.id DESC;
+```
