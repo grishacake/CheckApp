@@ -24,7 +24,8 @@
     {
       "name": "Health",
       "description": "Проверка сервера"
-    }
+    },
+    { "name": "Favorites", "description": "Избранные сохранённые карточки приложений" }
   ],
   "paths": {
     "/api/auth/register": {
@@ -290,6 +291,180 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/favorites": {
+      "get": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "listFavorites",
+        "summary": "Получить список избранного",
+        "description": "Возвращает сохранённые карточки текущего пользователя без обращения к Google Play.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список избранного, не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritesPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/favorites/{store}/{packageName}": {
+      "put": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "addFavorite",
+        "summary": "Добавить приложение в избранное",
+        "description": "Добавляет сохранённую карточку активного магазина. Повторное добавление успешно.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,49}$"
+            }
+          },
+          {
+            "name": "packageName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Операция выполнена. Ответ не кешируется."
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "404": {
+            "description": "Карточка не найдена или магазин неактивен при добавлении.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "removeFavorite",
+        "summary": "Удалить приложение из избранного",
+        "description": "Удаляет приложение из избранного. Операция успешна, если записи уже нет.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,49}$"
+            }
+          },
+          {
+            "name": "packageName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Операция выполнена. Ответ не кешируется."
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
           }
         }
       }
@@ -646,6 +821,53 @@
           "error": {
             "type": "string",
             "description": "Сообщение об ошибке."
+          }
+        }
+      },
+      "Favorite": {
+        "type": "object",
+        "required": [
+          "store_app_id",
+          "store",
+          "app",
+          "created_at"
+        ],
+        "properties": {
+          "store_app_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store": {
+            "type": "string"
+          },
+          "app": {
+            "$ref": "#/components/schemas/App"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FavoritesPage": {
+        "type": "object",
+        "required": [
+          "favorites",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "favorites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Favorite"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
           }
         }
       },

@@ -41,6 +41,9 @@ curl http://localhost:8080/health
 | POST | `/api/auth/register` | Регистрация: email, обязательный ник, пароль. |
 | POST | `/api/auth/login` | Вход и получение JWT. |
 | GET | `/api/auth/me` | Профиль по Bearer-токену. |
+| GET | `/api/favorites?limit=20&offset=0` | Избранное пользователя; нужен Bearer-токен. |
+| PUT | `/api/favorites/{store}/{packageName}` | Добавить сохранённую карточку в избранное. |
+| DELETE | `/api/favorites/{store}/{packageName}` | Удалить карточку из избранного. |
 | GET | `/api/apps/{package_name}` | Свежая карточка из БД или Google Play: 400 неверный формат, 404 не найдено, 500 ошибка БД, 502 Google не ответил. |
 | GET | `/api/search?q=google chrome` | Поиск по словам: до 5 карточек в порядке выдачи Google Play, `{"query": ..., "results": [...]}`. |
 

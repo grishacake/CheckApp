@@ -56,11 +56,14 @@ func run(ctx context.Context) error {
 	searchHandler := httpapi.NewSearchHandler(catalog, 12*time.Second)
 
 	users := postgres.NewUserRepository(pool)
-	authHandler := httpapi.NewAuthHandler(auth.NewService(users), tokens, 5*time.Second)
+	authService := auth.NewService(users)
+	authHandler := httpapi.NewAuthHandler(authService, tokens, 5*time.Second)
+	favoritesHandler := httpapi.NewFavoriteHandler(postgres.NewFavoritesRepository(pool), authService, tokens, 5*time.Second)
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
 	authHandler.RegisterRoutes(mux)
+	favoritesHandler.RegisterRoutes(mux)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if _, err := w.Write([]byte("ok")); err != nil {
