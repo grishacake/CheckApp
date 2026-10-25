@@ -2,25 +2,28 @@
 
 ## Запуск
 
-Нужен Go 1.24.5+ и запущенный Docker для PostgreSQL.
+Нужны Docker Engine, Docker Compose и OpenSSL для создания секрета при первой настройке.
+
+Первый запуск после клонирования:
 
 ```bash
-docker compose up -d --wait db
-export DATABASE_URL='postgres://checkapp:checkapp@localhost:5435/checkapp?sslmode=disable'
-export JWT_SECRET="$(openssl rand -hex 32)"
-make run           # или: go run ./cmd/server
+cp .env.example .env
+sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
+docker compose up -d --build --wait
 ```
 
-Без `JWT_SECRET`, `DATABASE_URL` или доступной БД сервер не запустится. Перед первым запуском примените миграции по [инструкции БД](docs/database.md). Соединение проверяется при старте с тайм-аутом 5 секунд. Пользователи сохраняются в PostgreSQL и остаются после перезапуска. При `Ctrl+C` сервер завершает запросы и закрывает пул БД.
+Если `.env` уже заполнен, достаточно последней команды. Compose запускает PostgreSQL, применяет миграции Goose и поднимает бэкенд. Повторять `export` не нужно. Секрет в `.env` сохраняется между запусками; файл исключён из Git и сборки образа.
 
 Проверка:
 
 ```bash
-curl localhost:8080/health          # ok
-curl -i localhost:8080/api/apps/com.uchi.app
+docker compose ps -a
+curl http://localhost:8080/health
 ```
 
-Миграции, DBeaver и повторный запуск: [локальная БД](docs/database.md). В Docker Compose пока запускается только PostgreSQL; бэкенд запускается отдельно командой выше.
+Ожидается: `db` и `backend` — healthy, `migrate` — Exited (0), `/health` — `ok`. Пользователи сохраняются в PostgreSQL. Остановка: `docker compose down` (данные остаются).
+
+Настройки, DBeaver и ручной запуск Go: [локальная БД](docs/database.md). Фронтенд пока запускается отдельно.
 
 ## Swagger / OpenAPI
 
