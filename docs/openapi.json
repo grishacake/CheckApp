@@ -3,7 +3,7 @@
   "info": {
     "title": "App Grabber API",
     "version": "0.1.0",
-    "description": "Авторизация: 1) зарегистрируйтесь через POST /api/auth/register; 2) выполните POST /api/auth/login; 3) скопируйте access_token; 4) нажмите Authorize и вставьте токен без префикса Bearer; 5) вызовите GET /api/auth/me. Пользователи временно хранятся в памяти и исчезают после перезапуска сервера."
+    "description": "Авторизация: 1) зарегистрируйтесь через POST /api/auth/register; 2) выполните POST /api/auth/login; 3) скопируйте access_token; 4) нажмите Authorize и вставьте токен без префикса Bearer; 5) вызовите GET /api/auth/me. Пользователи сохраняются в PostgreSQL и остаются после перезапуска сервера."
   },
   "servers": [
     {
@@ -24,7 +24,9 @@
     {
       "name": "Health",
       "description": "Проверка сервера"
-    }
+    },
+    { "name": "Favorites", "description": "Избранные сохранённые карточки приложений" },
+    { "name": "History", "description": "История просмотров карточек приложений" }
   ],
   "paths": {
     "/api/auth/register": {
@@ -34,7 +36,7 @@
         ],
         "operationId": "registerUser",
         "summary": "Зарегистрировать пользователя",
-        "description": "Создаёт пользователя. Ник обязателен. После регистрации выполните вход для получения токена. Пользователи хранятся в памяти до перезапуска сервера.",
+        "description": "Создаёт пользователя. Ник обязателен. После регистрации выполните вход для получения токена. Пользователи сохраняются в PostgreSQL.",
         "requestBody": {
           "required": true,
           "content": {
@@ -136,7 +138,7 @@
         ],
         "operationId": "getCurrentUser",
         "summary": "Получить свой профиль",
-        "description": "Нажмите Authorize и вставьте access_token из ответа входа. Профиль определяется по ID из JWT. Если токен недействителен или пользователя больше нет в памяти сервера, возвращается 401.",
+        "description": "Нажмите Authorize и вставьте access_token из ответа входа. Профиль определяется по ID из JWT. Если токен недействителен или пользователь удалён из БД, возвращается 401.",
         "security": [
           {
             "bearerAuth": []
@@ -197,7 +199,11 @@
         ],
         "operationId": "getApp",
         "summary": "Получить карточку по package name",
-        "description": "",
+        "description": "Свежая карточка возвращается из PostgreSQL без повторного парсинга. При отсутствии или устаревании данных запрос идёт в Google Play, результат сохраняется. Каждый успешный GET записывается в историю просмотров: без токена — анонимно, с токеном — для пользователя. Переданный неверный или просроченный токен даёт 401. APP_CACHE_TTL: по умолчанию 24h, 0 отключает чтение кеша.",
+        "security": [
+          {},
+          { "bearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -258,6 +264,18 @@
               }
             }
           },
+          "500": {
+            "description": "Ошибка чтения, сохранения карточки или записи просмотра в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Не удалось сохранить данные приложения" }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
           "502": {
             "description": "Ответ - сбой Google Play, блокировка, тайм-аут или ошибка разбора карточки.",
             "content": {
@@ -281,6 +299,203 @@
                 }
               }
             }
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "tags": ["History"],
+        "operationId": "listHistory",
+        "summary": "Получить историю просмотров",
+        "description": "Возвращает карточки, просмотренные текущим пользователем, по времени просмотра от новых к старым. Анонимные просмотры не отображаются. Ответ не кешируется.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Страница истории просмотров.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HistoryPage" } } } },
+          "400": { "$ref": "#/components/responses/AuthBadRequest" },
+          "401": { "$ref": "#/components/responses/AuthUnauthorized" },
+          "500": { "$ref": "#/components/responses/AuthInternalError" },
+          "504": { "$ref": "#/components/responses/AuthTimeout" }
+        }
+      }
+    },
+    "/api/favorites": {
+      "get": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "listFavorites",
+        "summary": "Получить список избранного",
+        "description": "Возвращает сохранённые карточки текущего пользователя без обращения к Google Play.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список избранного, не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritesPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/favorites/{store}/{packageName}": {
+      "put": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "addFavorite",
+        "summary": "Добавить приложение в избранное",
+        "description": "Добавляет сохранённую карточку активного магазина. Повторное добавление успешно.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,49}$"
+            }
+          },
+          {
+            "name": "packageName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Операция выполнена. Ответ не кешируется."
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "404": {
+            "description": "Карточка не найдена или магазин неактивен при добавлении.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "removeFavorite",
+        "summary": "Удалить приложение из избранного",
+        "description": "Удаляет приложение из избранного. Операция успешна, если записи уже нет.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,49}$"
+            }
+          },
+          {
+            "name": "packageName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Операция выполнена. Ответ не кешируется."
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
           }
         }
       }
@@ -292,17 +507,16 @@
         ],
         "operationId": "searchApps",
         "summary": "Найти приложения по словам, как в поиске Google Play",
-        "description": "Возвращает до 5 карточек в порядке выдачи Google Play. Ответ 2–4 секунды: каждая карточка — отдельный запрос к Google. Ничего не нашлось — 200 и пустой results.",
+        "description": "Возвращает до 5 карточек в порядке выдачи Google Play. Ответ 2–4 секунды: каждая карточка — отдельный запрос к Google. Ничего не нашлось — 200 и пустой results. Если q - ссылка на карточку в Google Play или RuStore, возвращает одну карточку этого приложения (или пустой results, если его нет в Google Play).",
         "parameters": [
           {
             "name": "q",
             "in": "query",
             "required": true,
-            "description": "Поисковая строка, 1–100 символов, UTF-8",
+            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://apps.rustore.ru/app/com.uchi.app (для ссылок ограничения длины нет)",
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 100
+              "minLength": 1
             },
             "example": "google chrome"
           }
@@ -328,6 +542,15 @@
                 "example": {
                   "error": "Пустой поисковый запрос"
                 }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения кеша или сохранения карточек в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Не удалось сохранить данные приложения" }
               }
             }
           },
@@ -629,6 +852,73 @@
             "type": "string",
             "description": "Сообщение об ошибке."
           }
+        }
+      },
+      "Favorite": {
+        "type": "object",
+        "required": [
+          "store_app_id",
+          "store",
+          "app",
+          "created_at"
+        ],
+        "properties": {
+          "store_app_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store": {
+            "type": "string"
+          },
+          "app": {
+            "$ref": "#/components/schemas/App"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FavoritesPage": {
+        "type": "object",
+        "required": [
+          "favorites",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "favorites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Favorite"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "View": {
+        "type": "object",
+        "required": ["id", "store_app_id", "store", "app", "viewed_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "store_app_id": { "type": "integer", "format": "int64" },
+          "store": { "type": "string" },
+          "app": { "$ref": "#/components/schemas/App" },
+          "viewed_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HistoryPage": {
+        "type": "object",
+        "required": ["history", "limit", "offset"],
+        "properties": {
+          "history": { "type": "array", "items": { "$ref": "#/components/schemas/View" } },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" }
         }
       },
       "SearchResult": {
