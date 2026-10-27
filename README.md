@@ -2,25 +2,28 @@
 
 ## Запуск
 
-Нужен Go 1.24+.
+Нужны Docker Engine, Docker Compose и OpenSSL для создания секрета при первой настройке.
+
+Первый запуск после клонирования:
 
 ```bash
-make run           # или: go run ./cmd/server
+cp .env.example .env
+sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
+docker compose up -d --build --wait
 ```
+
+Если `.env` уже заполнен, достаточно последней команды. Compose запускает PostgreSQL, применяет миграции Goose и поднимает бэкенд. Повторять `export` не нужно. Секрет в `.env` сохраняется между запусками; файл исключён из Git и сборки образа.
 
 Проверка:
 
 ```bash
-curl localhost:8080/health          # ok
-curl -i localhost:8080/api/apps/com.uchi.app   # пока 501 — заглушка
+docker compose ps -a
+curl http://localhost:8080/health
 ```
 
-Через Docker:
+Ожидается: `db` и `backend` — healthy, `migrate` — Exited (0), `/health` — `ok`. Пользователи сохраняются в PostgreSQL. Остановка: `docker compose down` (данные остаются).
 
-```bash
-docker build -t app-grabber-backend .
-docker run -p 8080:8080 app-grabber-backend
-```
+Настройки, DBeaver и ручной запуск Go: [локальная БД](docs/database.md). Фронтенд пока запускается отдельно.
 
 ## Доступ к Google Play из России
 
@@ -33,7 +36,7 @@ docker run -p 8080:8080 app-grabber-backend
 | `GP_PROXY_URL` | Прокси для запросов к Google: `http://ЛОГИН:ПАРОЛЬ@IP:ПОРТ`. Пусто — без прокси. |
 | `GP_FRONT_HOST` | Хост вместо `play.google.com`, по умолчанию `www.google.com`. Пустое значение — ходить напрямую. |
 
-`make run` читает `.env` сам, в Docker: `docker run --env-file .env -p 8080:8080 app-grabber-backend`.
+Compose передаёт `.env` в контейнер бэкенда; после изменения перезапустите: `docker compose up -d --wait backend`.
 
 ## Swagger / OpenAPI
 
@@ -43,11 +46,22 @@ docker run -p 8080:8080 app-grabber-backend
 
 ## API
 
+Авторизация и пошаговая проверка в Swagger: [JWT, настройки и middleware](docs/auth.md).
+
 | Метод | Путь | Что делает |
 |-------|------|------------|
 | GET | `/health` | Проверить, что сервер жив. |
-| GET | `/api/apps/{package_name}` | Карточка приложения из Google Play: 400 неверный формат, 404 не найдено, 502 Google не ответил. |
-| GET | `/api/search?q=google chrome` | Поиск по словам: до 5 карточек в порядке выдачи Google Play, `{"query": ..., "results": [...]}`. |
+| POST | `/api/auth/register` | Регистрация: email, обязательный ник, пароль. |
+| POST | `/api/auth/login` | Вход и получение JWT. |
+| GET | `/api/auth/me` | Профиль по Bearer-токену. |
+| GET | `/api/favorites?limit=20&offset=0` | Избранное пользователя; нужен Bearer-токен. |
+| PUT | `/api/favorites/{store}/{packageName}` | Добавить сохранённую карточку в избранное. |
+| DELETE | `/api/favorites/{store}/{packageName}` | Удалить карточку из избранного. |
+| GET | `/api/history?limit=20&offset=0` | История просмотров текущего пользователя; нужен Bearer-токен. |
+| GET | `/api/apps/{package_name}` | Свежая карточка из БД или Google Play; успешный GET записывается в историю. Переданный неверный JWT даёт 401. |
+| GET | `/api/search?q=google chrome` | Поиск по словам: до 5 карточек в порядке выдачи Google Play. В `q` можно передать ссылку Google Play или RuStore — вернётся одна карточка. |
+
+По package name свежая карточка возвращается из PostgreSQL без повторного парсинга. Срок актуальности — `APP_CACHE_TTL` (по умолчанию `24h`, `0` отключает чтение кеша). Отсутствующая или устаревшая карточка получается из Google Play и сохраняется без дублей. Поиск по словам пока идёт в Google Play, результаты сохраняются в БД. Ошибки чтения кеша и сохранения карточки для ссылки возвращают 500.
 
 Договорённый формат ответа для `/api/apps/{package_name}` (структура `model.App`):
 
@@ -79,4 +93,3 @@ Dockerfile                Сборка образа
 - Сохранить настоящие страницы 10–20 приложений в `testdata/` и написать тесты на них
 - Ошибки: неверный ID → 400, приложение не найдено → 404
 - Возрастной рейтинг `age_rating` — восьмое поле карточки.
-- Поиск по названию, БД, история и сравнение магазинов не входят в текущий хакатон.
