@@ -35,7 +35,7 @@ func NewTokenManager(secret string, ttl time.Duration) (*TokenManager, error) {
 }
 
 func NewTokenManagerFromEnv() (*TokenManager, error) {
-	ttl := 15 * time.Minute
+	ttl := 24 * time.Hour
 	if value := os.Getenv("JWT_TTL"); value != "" {
 		var err error
 		ttl, err = time.ParseDuration(value)

@@ -76,7 +76,7 @@ func TestRegisterValidation(t *testing.T) {
 		{"display name", "Artem <artem@example.com>", "", "a sufficiently long password", auth.ErrInvalidEmail},
 		{"invalid email UTF8", "user\xff@example.com", "", "a sufficiently long password", auth.ErrInvalidEmail},
 		{"long email", strings.Repeat("a", 250) + "@example.com", "", "a sufficiently long password", auth.ErrInvalidEmail},
-		{"short password", "a@example.com", "artem", strings.Repeat("я", 14), auth.ErrInvalidPassword},
+		{"short password", "a@example.com", "artem", strings.Repeat("я", 7), auth.ErrInvalidPassword},
 		{"long password", "a@example.com", "artem", strings.Repeat("я", 129), auth.ErrInvalidPassword},
 		{"invalid password UTF8", "a@example.com", "artem", "a long password\xff", auth.ErrInvalidPassword},
 		{"empty nickname", "a@example.com", "", "a sufficiently long password", auth.ErrInvalidNickname},

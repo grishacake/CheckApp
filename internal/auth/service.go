@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	MinPasswordLength = 15
+	MinPasswordLength = 8
 	MaxPasswordLength = 128
 	MaxNicknameLength = 50
 	maxEmailLength    = 254

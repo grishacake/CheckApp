@@ -692,7 +692,7 @@
           "password": {
             "type": "string",
             "format": "password",
-            "minLength": 15,
+            "minLength": 8,
             "maxLength": 128,
             "description": "Пробелы являются частью пароля."
           }
@@ -759,7 +759,7 @@
         "properties": {
           "access_token": {
             "type": "string",
-            "description": "JWT для Authorization: Bearer <token>. Срок действия указан в exp; по умолчанию 15 минут."
+            "description": "JWT для Authorization: Bearer <token>. Срок действия указан в exp; по умолчанию 24 часа."
           },
           "token_type": {
             "type": "string",

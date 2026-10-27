@@ -127,7 +127,7 @@ func TestTokenConfigurationFromEnv(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("s", 32))
 	t.Setenv("JWT_TTL", "")
 	m, err := NewTokenManagerFromEnv()
-	if err != nil || m.ttl != 15*time.Minute {
+	if err != nil || m.ttl != 24*time.Hour {
 		t.Fatalf("default configuration: %v", err)
 	}
 	t.Setenv("JWT_TTL", "30m")
