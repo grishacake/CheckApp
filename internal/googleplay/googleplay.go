@@ -22,7 +22,15 @@ import (
 	"app-grabber-backend/internal/model"
 )
 
-const detailURL = "https://play.google.com/store/apps/details"
+const (
+	playHost  = "play.google.com"
+	detailURL = "https://" + playHost + "/store/apps/details"
+)
+
+// DefaultFrontHost — хост, через который ходим к Google Play. Из России play.google.com режут
+// по имени сайта в начале TLS (SNI), а www.google.com — нет. Сервер у Google общий:
+// соединяемся с www.google.com, а в заголовке Host просим play.google.com — отдаётся та же страница.
+const DefaultFrontHost = "www.google.com"
 
 // maxPageSize — максимальный размер страницы. Обычная карточка весит около 1,3 МБ.
 const maxPageSize = 10 << 20
@@ -43,6 +51,9 @@ type Client struct {
 	Countries []string
 	// MinInterval — минимальная пауза между запросами к Google, чтобы не получить капчу.
 	MinInterval time.Duration
+	// FrontHost — хост для соединения вместо play.google.com (см. DefaultFrontHost).
+	// Пусто — ходим на play.google.com напрямую.
+	FrontHost string
 
 	mu   sync.Mutex
 	next time.Time // раньше этого момента новый запрос не отправляем
@@ -57,7 +68,32 @@ func New() *Client {
 		Language:    "ru",
 		Countries:   []string{"ru", "us"},
 		MinInterval: 300 * time.Millisecond,
+		FrontHost:   DefaultFrontHost,
 	}
+}
+
+// UseProxy направляет запросы к Google через прокси, например http://login:password@1.2.3.4:10000.
+// Подходят схемы http, https и socks5. Пустая строка — без прокси.
+func (c *Client) UseProxy(rawURL string) error {
+	if rawURL == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("proxy url: %w", err)
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5":
+	default:
+		return fmt.Errorf("proxy url: unsupported scheme %q, want http, https or socks5", u.Scheme)
+	}
+	if u.Host == "" {
+		return errors.New("proxy url: no host")
+	}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = http.ProxyURL(u)
+	c.HTTP.Transport = t
+	return nil
 }
 
 // GetApp возвращает карточку приложения. Тайм-аут задаёт вызывающий через ctx:
@@ -114,6 +150,11 @@ func (c *Client) get(ctx context.Context, u string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
+	}
+	if c.FrontHost != "" && req.URL.Host == playHost {
+		// соединение (и SNI) — с FrontHost, а Host — play.google.com
+		req.Host = playHost
+		req.URL.Host = c.FrontHost
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
