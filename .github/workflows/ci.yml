@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: checkapp
+          POSTGRES_USER: checkapp
+          POSTGRES_PASSWORD: checkapp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U checkapp -d checkapp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://checkapp:checkapp@127.0.0.1:5432/checkapp?sslmode=disable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Apply database migrations
+        run: |
+          go install -tags "no_clickhouse no_libsql no_mssql no_mysql no_sqlite3 no_vertica no_ydb" github.com/pressly/goose/v3/cmd/goose@v3.29.0
+          "$(go env GOPATH)/bin/goose" -dir migrations postgres "$TEST_DATABASE_URL" up
+
+      - name: Run tests
+        run: go test -race ./...
+
+      - name: Check build
+        run: go build -mod=readonly ./cmd/server
