@@ -1,0 +1,405 @@
+package googleplay
+
+import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"app-grabber-backend/internal/app"
+)
+
+// Сохранённые страницы Google Play лежат в testdata/<id>.<gl>.html.gz (сжаты: без сжатия ~1,3 МБ каждая).
+// Обновить их с живого Google Play:
+//
+//	go test ./internal/googleplay -update
+var update = flag.Bool("update", false, "скачать страницы из Google Play в testdata/")
+
+// fixtureIDs — приложения, страницы которых храним в testdata/.
+var fixtureIDs = []string{
+	"com.uchi.app",
+	"com.vkontakte.android", // нет в RU, есть в US
+	"org.telegram.messenger",
+	"com.whatsapp",
+	"ru.ozon.app.android",
+	"com.wildberries.ru",
+	"com.google.android.youtube",
+	"ru.yandex.searchplugin",
+	"com.spotify.music",
+	"com.duolingo",
+	"com.supercell.brawlstars",
+	"ru.sberbankmobile", // удалён из Google Play — страниц нет
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *update {
+		if err := downloadFixtures(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func downloadFixtures() error {
+	for _, id := range fixtureIDs {
+		for _, gl := range []string{"ru", "us"} {
+			u := detailURL + "?id=" + id + "&gl=" + gl + "&hl=ru"
+			resp, err := http.Get(u)
+			if err != nil {
+				return err
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return err
+			}
+			path := fixturePath(id, gl)
+			if resp.StatusCode == http.StatusNotFound {
+				os.Remove(path)
+				fmt.Printf("%s gl=%s: 404\n", id, gl)
+			} else if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("%s gl=%s: %s", id, gl, resp.Status)
+			} else if err := writeGzip(path, body); err != nil {
+				return err
+			} else {
+				fmt.Printf("%s gl=%s: saved\n", id, gl)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	for query, name := range searchFixtures {
+		u := searchURL + "?" + url.Values{"q": {query}, "c": {"apps"}, "hl": {"ru"}, "gl": {"ru"}}.Encode()
+		resp, err := http.Get(u)
+		if err != nil {
+			return err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("search %q: %s", query, resp.Status)
+		}
+		if err := writeGzip(searchFixturePath(name), body); err != nil {
+			return err
+		}
+		fmt.Printf("search %q: saved\n", query)
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil
+}
+
+func fixturePath(id, gl string) string {
+	return filepath.Join("testdata", id+"."+gl+".html.gz")
+}
+
+// searchFixtures — сохранённые страницы поиска: запрос → имя файла testdata/search.<имя>.html.gz.
+var searchFixtures = map[string]string{
+	"google chrome":   "google_chrome",
+	"учи ру":          "uchi_ru",
+	"zzqqxxyyrr12345": "nothing",
+}
+
+func searchFixturePath(name string) string {
+	return filepath.Join("testdata", "search."+name+".html.gz")
+}
+
+func writeGzip(path string, data []byte) error {
+	var buf bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	zw.Write(data)
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
+func readGzip(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(zr)
+}
+
+// fixtureTransport отвечает страницей из testdata/ или 404, если её нет.
+type fixtureTransport struct{}
+
+func (fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	q := r.URL.Query()
+	path := fixturePath(q.Get("id"), q.Get("gl"))
+	if r.URL.Path == "/store/search" {
+		path = searchFixturePath(searchFixtures[q.Get("q")])
+	}
+	body, err := readGzip(path)
+	status := http.StatusOK
+	if errors.Is(err, os.ErrNotExist) {
+		status, body = http.StatusNotFound, nil
+	} else if err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		StatusCode: status,
+		Status:     fmt.Sprintf("%d %s", status, http.StatusText(status)),
+		Body:       io.NopCloser(bytes.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+// newTestClient отвечает страницами из testdata/, а не из сети.
+func newTestClient() *Client {
+	return newTestClientWith(fixtureTransport{})
+}
+
+func newTestClientWith(rt http.RoundTripper) *Client {
+	c := New()
+	c.HTTP = &http.Client{Transport: rt}
+	c.MinInterval = 0
+	return c
+}
+
+func TestGetApp_Uchi(t *testing.T) {
+	app, err := newTestClient().GetApp(context.Background(), "com.uchi.app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := []struct{ field, got, want string }{
+		{"package_name", app.PackageName, "com.uchi.app"},
+		{"store_url", app.StoreURL, "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru"},
+		{"name", app.Name, "Учи.ру"},
+		{"developer", app.Developer, `ООО "Учи.ру"`},
+		{"category", app.Category, "Образование"},
+		{"age_rating", app.AgeRating, "3+"},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.field, c.got, c.want)
+		}
+	}
+	if app.Rating != 4.2 {
+		t.Errorf("rating = %v, want 4.2", app.Rating)
+	}
+}
+
+// ВКонтакте нет в российском Google Play: должны найти его в US и дать ссылку с gl=us.
+func TestGetApp_FallbackToUS(t *testing.T) {
+	app, err := newTestClient().GetApp(context.Background(), "com.vkontakte.android")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://play.google.com/store/apps/details?id=com.vkontakte.android&hl=ru&gl=us"; app.StoreURL != want {
+		t.Errorf("store_url = %q, want %q", app.StoreURL, want)
+	}
+	if app.AgeRating != "13+" {
+		t.Errorf("age_rating = %q, want 13+", app.AgeRating)
+	}
+}
+
+func TestGetApp_NotFound(t *testing.T) {
+	for _, id := range []string{"ru.sberbankmobile", "com.example.none"} {
+		_, err := newTestClient().GetApp(context.Background(), id)
+		if !errors.Is(err, app.ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// Все сохранённые страницы должны разбираться: если Google поменяет разметку,
+// после -update этот тест покажет, какие поля перестали заполняться.
+func TestGetApp_AllFixturesHaveFields(t *testing.T) {
+	c := newTestClient()
+	for _, id := range fixtureIDs {
+		_, errRU := os.Stat(fixturePath(id, "ru"))
+		_, errUS := os.Stat(fixturePath(id, "us"))
+		if errRU != nil && errUS != nil {
+			continue // приложения нет в Google Play
+		}
+		t.Run(id, func(t *testing.T) {
+			app, err := c.GetApp(context.Background(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for field, v := range map[string]string{
+				"package_name": app.PackageName, "store_url": app.StoreURL, "name": app.Name, "developer": app.Developer,
+				"icon_url": app.IconURL, "category": app.Category, "age_rating": app.AgeRating,
+			} {
+				if v == "" {
+					t.Errorf("%s is empty", field)
+				}
+			}
+			if app.Rating < 0 || app.Rating > 5 {
+				t.Errorf("rating = %v, want 0..5", app.Rating)
+			}
+		})
+	}
+}
+
+// Google не отвечает дольше тайм-аута → ErrUnavailable, а сам запрос отменяется, а не висит в фоне.
+func TestGetApp_Timeout(t *testing.T) {
+	rt := &hangingTransport{canceled: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := newTestClientWith(rt).GetApp(ctx, "com.uchi.app")
+	if !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want ErrUnavailable and DeadlineExceeded", err)
+	}
+	select {
+	case <-rt.canceled:
+	default:
+		t.Fatal("request context was not canceled")
+	}
+}
+
+// Клиент ушёл (ctx отменён) → запрос к Google тоже отменяется.
+func TestGetApp_Canceled(t *testing.T) {
+	rt := &hangingTransport{canceled: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := newTestClientWith(rt).GetApp(ctx, "com.uchi.app")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	select {
+	case <-rt.canceled:
+	default:
+		t.Fatal("request context was not canceled")
+	}
+}
+
+// hangingTransport не отвечает, пока не отменят контекст запроса, и отмечает отмену в canceled.
+type hangingTransport struct {
+	canceled chan struct{}
+}
+
+func (h *hangingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	select {
+	case <-r.Context().Done():
+		close(h.canceled)
+		return nil, r.Context().Err()
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("request context was never canceled")
+	}
+}
+
+// Страница открылась, но данных нет (капча, новая разметка) → ErrUnavailable.
+func TestGetApp_EmptyPage(t *testing.T) {
+	_, err := newTestClientWith(emptyTransport{}).GetApp(context.Background(), "com.uchi.app")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+type emptyTransport struct{}
+
+func (emptyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body:       io.NopCloser(bytes.NewReader([]byte("<html>captcha</html>"))),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+// Сетевая ошибка содержит URL с package name. "404" в имени не должно превращать её в «не найдено».
+func TestGetApp_NetworkErrorWith404InID(t *testing.T) {
+	_, err := newTestClientWith(failingTransport{}).GetApp(context.Background(), "com.app404")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+	if errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("err = %v, must not be ErrNotFound", err)
+	}
+}
+
+type failingTransport struct{}
+
+func (failingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, errors.New("connection reset")
+}
+
+func TestNormalizeAge(t *testing.T) {
+	for in, want := range map[string]string{
+		"3+":         "3+",
+		"18+":        "18+",
+		"T (13+)":    "13+",
+		"M (17+)":    "17+",
+		"Для всех":   "Для всех",
+		" Everyone ": "Everyone",
+		"":           "",
+	} {
+		if got := normalizeAge(in); got != want {
+			t.Errorf("normalizeAge(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSearch_IDsInGooglePlayOrder(t *testing.T) {
+	ids, err := newTestClient().searchIDs(context.Background(), "google chrome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"com.android.chrome", "com.chrome.beta", "com.chrome.dev"}
+	if len(ids) < len(want) {
+		t.Fatalf("ids = %v, want at least %v", ids, want)
+	}
+	for i, id := range want {
+		if ids[i] != id {
+			t.Errorf("ids[%d] = %q, want %q (all: %v)", i, ids[i], id, ids[:5])
+		}
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			t.Errorf("duplicate id %q", id)
+		}
+		seen[id] = true
+	}
+}
+
+// В testdata есть карточка только Учи.ру: остальные из выдачи дают 404 и пропускаются.
+func TestSearch_ReturnsCards(t *testing.T) {
+	cards, err := newTestClient().Search(context.Background(), "учи ру", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) == 0 || cards[0].PackageName != "com.uchi.app" || cards[0].Name != "Учи.ру" {
+		t.Fatalf("cards = %+v, want Учи.ру first", cards)
+	}
+}
+
+func TestSearch_NothingFound(t *testing.T) {
+	cards, err := newTestClient().Search(context.Background(), "zzqqxxyyrr12345", 5)
+	if err != nil || len(cards) != 0 {
+		t.Fatalf("cards = %v, err = %v, want empty without error", cards, err)
+	}
+}
+
+func TestSearch_GoogleDown(t *testing.T) {
+	if _, err := newTestClientWith(failingTransport{}).Search(context.Background(), "telegram", 5); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}

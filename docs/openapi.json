@@ -1,0 +1,964 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "App Grabber API",
+    "version": "0.1.0",
+    "description": "Авторизация: 1) зарегистрируйтесь через POST /api/auth/register; 2) выполните POST /api/auth/login; 3) скопируйте access_token; 4) нажмите Authorize и вставьте токен без префикса Bearer; 5) вызовите GET /api/auth/me. Пользователи сохраняются в PostgreSQL и остаются после перезапуска сервера."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Текущий сервер"
+    }
+  ],
+  "tags": [
+    { "name": "Auth", "description": "Регистрация, вход и профиль пользователя" },
+    {
+      "name": "Apps",
+      "description": "Карточка приложения Google Play"
+    },
+    {
+      "name": "Search",
+      "description": "Поиск приложений по словам"
+    },
+    {
+      "name": "Health",
+      "description": "Проверка сервера"
+    },
+    { "name": "Favorites", "description": "Избранные сохранённые карточки приложений" },
+    { "name": "History", "description": "История просмотров карточек приложений" }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "registerUser",
+        "summary": "Зарегистрировать пользователя",
+        "description": "Создаёт пользователя. Ник обязателен. После регистрации выполните вход для получения токена. Пользователи сохраняются в PostgreSQL.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              },
+              "example": { "email": "artem@example.com", "nickname": "Артём", "password": "example-password-123" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Пользователь создан.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/AuthConflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/AuthTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/AuthMediaType"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "loginUser",
+        "summary": "Войти и получить JWT",
+        "description": "Возвращает access_token. Скопируйте его в Authorize без префикса Bearer, затем вызовите /api/auth/me.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
+              "example": { "email": "artem@example.com", "password": "example-password-123" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Токен и пользователь. Ответ не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthInvalidCredentials"
+          },
+          "413": {
+            "$ref": "#/components/responses/AuthTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/AuthMediaType"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "getCurrentUser",
+        "summary": "Получить свой профиль",
+        "description": "Нажмите Authorize и вставьте access_token из ответа входа. Профиль определяется по ID из JWT. Если токен недействителен или пользователь удалён из БД, возвращается 401.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Профиль пользователя. Ответ не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "operationId": "getHealth",
+        "summary": "Проверить доступность сервера",
+        "responses": {
+          "200": {
+            "description": "Сервер работает.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "ok"
+                  ]
+                },
+                "example": "ok"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{id}": {
+      "get": {
+        "tags": [
+          "Apps"
+        ],
+        "operationId": "getApp",
+        "summary": "Получить карточку по package name",
+        "description": "Свежая карточка возвращается из PostgreSQL без повторного парсинга. При отсутствии или устаревании данных запрос идёт в Google Play, результат сохраняется. Каждый успешный GET записывается в историю просмотров: без токена — анонимно, с токеном — для пользователя. Переданный неверный или просроченный токен даёт 401. APP_CACHE_TTL: по умолчанию 24h, 0 отключает чтение кеша.",
+        "security": [
+          {},
+          { "bearerAuth": [] }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Формат обратного домена",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ответ - карточка приложения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/App"
+                },
+                "example": {
+                  "package_name": "com.uchi.app",
+                  "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
+                  "name": "Учи.ру",
+                  "developer": "ООО \"Учи.ру\"",
+                  "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+                  "category": "Образование",
+                  "rating": 4.2,
+                  "age_rating": "3+"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ответ - неверный формат package_name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Некорректный формат package_name"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "-",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Приложение не найдено в Google Play"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения, сохранения карточки или записи просмотра в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Не удалось сохранить данные приложения" }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "502": {
+            "description": "Ответ - сбой Google Play, блокировка, тайм-аут или ошибка разбора карточки.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "upstream": {
+                    "summary": "Ошибка источника",
+                    "value": {
+                      "error": "Не удалось получить данные из Google Play"
+                    }
+                  },
+                  "timeout": {
+                    "summary": "Тайм-аут",
+                    "value": {
+                      "error": "Превышено время ожидания Google Play"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "tags": ["History"],
+        "operationId": "listHistory",
+        "summary": "Получить историю просмотров",
+        "description": "Возвращает карточки, просмотренные текущим пользователем, по времени просмотра от новых к старым. Анонимные просмотры не отображаются. Ответ не кешируется.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Страница истории просмотров.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HistoryPage" } } } },
+          "400": { "$ref": "#/components/responses/AuthBadRequest" },
+          "401": { "$ref": "#/components/responses/AuthUnauthorized" },
+          "500": { "$ref": "#/components/responses/AuthInternalError" },
+          "504": { "$ref": "#/components/responses/AuthTimeout" }
+        }
+      }
+    },
+    "/api/favorites": {
+      "get": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "listFavorites",
+        "summary": "Получить список избранного",
+        "description": "Возвращает сохранённые карточки текущего пользователя без обращения к Google Play.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список избранного, не кешируется.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritesPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/favorites/{store}/{packageName}": {
+      "put": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "addFavorite",
+        "summary": "Добавить приложение в избранное",
+        "description": "Добавляет сохранённую карточку активного магазина. Повторное добавление успешно.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,49}$"
+            }
+          },
+          {
+            "name": "packageName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Операция выполнена. Ответ не кешируется."
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "404": {
+            "description": "Карточка не найдена или магазин неактивен при добавлении.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Favorites"
+        ],
+        "operationId": "removeFavorite",
+        "summary": "Удалить приложение из избранного",
+        "description": "Удаляет приложение из избранного. Операция успешна, если записи уже нет.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,49}$"
+            }
+          },
+          {
+            "name": "packageName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Операция выполнена. Ответ не кешируется."
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "operationId": "searchApps",
+        "summary": "Найти приложения по словам, как в поиске Google Play",
+        "description": "Возвращает до 5 карточек в порядке выдачи Google Play. Ответ 2–4 секунды: каждая карточка — отдельный запрос к Google. Ничего не нашлось — 200 и пустой results. Если q - ссылка на карточку в Google Play или RuStore, возвращает одну карточку этого приложения (или пустой results, если его нет в Google Play).",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://apps.rustore.ru/app/com.uchi.app (для ссылок ограничения длины нет)",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "example": "google chrome"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ответ - найденные приложения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ответ - пустой, слишком длинный или не UTF-8 запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Пустой поисковый запрос"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения кеша или сохранения карточек в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Не удалось сохранить данные приложения" }
+              }
+            }
+          },
+          "502": {
+            "description": "Ответ - Google Play не ответил или тайм-аут",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Не удалось выполнить поиск в Google Play"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "responses": {
+      "AuthBadRequest": {
+        "description": "Некорректный JSON, неизвестные поля или неверные значения. Допускается только один JSON-объект.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthTooLarge": {
+        "description": "Тело запроса превышает 8 КиБ.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthMediaType": {
+        "description": "Ожидается Content-Type: application/json.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthInternalError": {
+        "description": "Внутренняя ошибка сервера.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthTimeout": {
+        "description": "Превышено время ожидания.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthConflict": {
+        "description": "Пользователь с таким email уже существует.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthInvalidCredentials": {
+        "description": "Неверный email или пароль.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthUnauthorized": {
+        "description": "Отсутствует или недействителен Bearer-токен либо пользователь больше не существует.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer"
+          }
+        }
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "nickname",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "example": "artem@example.com",
+            "description": "Пробелы по краям удаляются, email приводится к нижнему регистру."
+          },
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "example": "Артём",
+            "description": "Обязательный ник после удаления пробелов по краям; без управляющих символов. Уникальность не требуется."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 128,
+            "description": "Пробелы являются частью пароля."
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "artem@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "maxLength": 128
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "email",
+          "nickname",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "e94b6fc3-0c20-4f57-817c-856e55297e59"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "artem@example.com"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "Артём"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-21T12:00:00Z"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "access_token",
+          "token_type",
+          "user"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "JWT для Authorization: Bearer <token>. Срок действия указан в exp; по умолчанию 24 часа."
+          },
+          "token_type": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "App": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "package_name",
+          "store_url",
+          "name",
+          "developer",
+          "icon_url",
+          "category",
+          "rating",
+          "age_rating"
+        ],
+        "properties": {
+          "package_name": {
+            "type": "string",
+            "description": "Android package name.",
+            "example": "com.uchi.app"
+          },
+          "store_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Ссылка на карточку Google Play."
+          },
+          "name": {
+            "type": "string",
+            "description": "Название приложения.",
+            "example": "Учи.ру"
+          },
+          "developer": {
+            "type": "string",
+            "description": "Название разработчика.",
+            "example": "ООО \"Учи.ру\""
+          },
+          "icon_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Ссылка на изображение иконки для отображения."
+          },
+          "category": {
+            "type": "string",
+            "description": "Категория приложения",
+            "example": "Образование"
+          },
+          "rating": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Рейтинг от 0 до 5.",
+            "example": 4.2
+          },
+          "age_rating": {
+            "type": "string",
+            "description": "Возрастная метка Google Play в исходном виде: например 3+, 12+.",
+            "example": "3+"
+          }
+        },
+        "example": {
+          "package_name": "com.uchi.app",
+          "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
+          "name": "Учи.ру",
+          "developer": "ООО \"Учи.ру\"",
+          "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+          "category": "Образование",
+          "rating": 4.2,
+          "age_rating": "3+"
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Сообщение об ошибке."
+          }
+        }
+      },
+      "Favorite": {
+        "type": "object",
+        "required": [
+          "store_app_id",
+          "store",
+          "app",
+          "created_at"
+        ],
+        "properties": {
+          "store_app_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store": {
+            "type": "string"
+          },
+          "app": {
+            "$ref": "#/components/schemas/App"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FavoritesPage": {
+        "type": "object",
+        "required": [
+          "favorites",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "favorites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Favorite"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "View": {
+        "type": "object",
+        "required": ["id", "store_app_id", "store", "app", "viewed_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "store_app_id": { "type": "integer", "format": "int64" },
+          "store": { "type": "string" },
+          "app": { "$ref": "#/components/schemas/App" },
+          "viewed_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HistoryPage": {
+        "type": "object",
+        "required": ["history", "limit", "offset"],
+        "properties": {
+          "history": { "type": "array", "items": { "$ref": "#/components/schemas/View" } },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" }
+        }
+      },
+      "SearchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query",
+          "results"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Запрос после обрезки пробелов.",
+            "example": "google chrome"
+          },
+          "results": {
+            "type": "array",
+            "maxItems": 5,
+            "description": "Карточки в порядке выдачи Google Play.",
+            "items": {
+              "$ref": "#/components/schemas/App"
+            }
+          }
+        },
+        "example": {
+          "query": "google chrome",
+          "results": [
+            {
+              "package_name": "com.android.chrome",
+              "store_url": "https://play.google.com/store/apps/details?id=com.android.chrome&hl=ru",
+              "name": "Google Chrome",
+              "developer": "Google LLC",
+              "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+              "category": "Связь",
+              "rating": 4.1,
+              "age_rating": "3+"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
