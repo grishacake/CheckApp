@@ -17,6 +17,10 @@ var (
 
 const DefaultCacheTTL = 24 * time.Hour
 
+// DefaultSearchTTL — максимальный возраст карточки для полнотекстового поиска по локальной базе.
+// Карточки, обновлённые позже этого срока, не попадают в результаты — поиск уходит в Google Play.
+const DefaultSearchTTL = 7 * 24 * time.Hour
+
 func ParseCacheTTL(value string) (time.Duration, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -32,20 +36,31 @@ func ParseCacheTTL(value string) (time.Duration, error) {
 type CardRepository interface {
 	Save(ctx context.Context, storeCode string, cards []model.App) error
 	GetFresh(ctx context.Context, storeCode, packageName string, ttl time.Duration) (model.App, error)
+	// SearchByText ищет карточки по полнотекстовому индексу среди записей,
+	// обновлённых не позднее maxAge назад. Ничего не нашлось — пустой список без ошибки.
+	SearchByText(ctx context.Context, storeCode, query string, limit int, maxAge time.Duration) ([]model.App, error)
 }
 
 // Catalog serves fresh stored cards and refreshes cache misses from the provider.
-// Text searches still use the provider so the local database does not limit results.
+// Text searches first try a full-text search of the local database; when no
+// recent results are found the search falls through to the external provider.
 type Catalog struct {
-	provider Provider
-	searcher Searcher
-	cards    CardRepository
-	store    string
-	cacheTTL time.Duration
+	provider  Provider
+	searcher  Searcher
+	cards     CardRepository
+	store     string
+	cacheTTL  time.Duration
+	searchTTL time.Duration
 }
 
 func NewCatalog(provider Provider, searcher Searcher, cards CardRepository, storeCode string, cacheTTL time.Duration) *Catalog {
-	return &Catalog{provider: provider, searcher: searcher, cards: cards, store: storeCode, cacheTTL: cacheTTL}
+	return &Catalog{provider: provider, searcher: searcher, cards: cards, store: storeCode, cacheTTL: cacheTTL, searchTTL: DefaultSearchTTL}
+}
+
+// WithSearchTTL задаёт максимальный возраст карточки для полнотекстового поиска.
+func (c *Catalog) WithSearchTTL(d time.Duration) *Catalog {
+	c.searchTTL = d
+	return c
 }
 
 func (c *Catalog) GetApp(ctx context.Context, packageName string) (model.App, error) {
@@ -72,6 +87,18 @@ func (c *Catalog) GetApp(ctx context.Context, packageName string) (model.App, er
 }
 
 func (c *Catalog) Search(ctx context.Context, query string, limit int) ([]model.App, error) {
+	// Шаг 1: полнотекстовый поиск по локальной базе среди свежих карточек.
+	if c.searchTTL > 0 {
+		local, err := c.cards.SearchByText(ctx, c.store, query, limit, c.searchTTL)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrCacheRead, err)
+		}
+		if len(local) > 0 {
+			return local, nil
+		}
+	}
+
+	// Шаг 2: ничего не нашлось — ищем во внешнем источнике (Google Play).
 	cards, err := c.searcher.Search(ctx, query, limit)
 	if err != nil {
 		return nil, err
