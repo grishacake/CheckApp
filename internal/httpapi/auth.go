@@ -12,6 +12,8 @@ type TokenVerifier interface {
 
 type userIDKey struct{}
 
+const AuthCookieName = "access_token"
+
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(userIDKey{}).(string)
 	return id, ok && id != ""
@@ -19,17 +21,12 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 
 func WithAuth(verifier TokenVerifier, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		headers := r.Header.Values("Authorization")
-		if len(headers) != 1 {
+		cookies := r.CookiesNamed(AuthCookieName)
+		if len(cookies) != 1 {
 			unauthorized(w)
 			return
 		}
-		parts := strings.Fields(headers[0])
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			unauthorized(w)
-			return
-		}
-		userID, err := verifier.Verify(parts[1])
+		userID, err := verifier.Verify(cookies[0].Value)
 		if err != nil || strings.TrimSpace(userID) == "" {
 			unauthorized(w)
 			return
@@ -41,6 +38,5 @@ func WithAuth(verifier TokenVerifier, next http.Handler) http.Handler {
 
 func unauthorized(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("WWW-Authenticate", "Bearer")
 	writeError(w, http.StatusUnauthorized, "Требуется авторизация")
 }

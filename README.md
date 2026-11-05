@@ -46,18 +46,21 @@ Compose передаёт `.env` в контейнер бэкенда; после
 
 ## API
 
-Авторизация и пошаговая проверка в Swagger: [JWT, настройки и middleware](docs/auth.md).
+Авторизация — только через HttpOnly-cookie `access_token`, которую устанавливает login и удаляет logout. JWT действует 2 часа по умолчанию (`JWT_TTL=2h`). Для локального HTTP используется `COOKIE_SECURE=false`; при HTTPS задайте `true`.
+
+В Swagger выполните login, затем me: cookie отправляется автоматически. После logout ручка me возвращает 401. При запросах браузера к другому origin используйте `credentials: "include"`. Next.js должен передавать cookie в Go и заголовок `Set-Cookie` обратно браузеру. POST/PUT/DELETE требуют разрешённый `Origin` либо `Referer`; адрес фронта задаётся в `CORS_ORIGINS`.
 
 | Метод | Путь | Что делает |
 |-------|------|------------|
 | GET | `/health` | Проверить, что сервер жив. |
-| POST | `/api/auth/register` | Регистрация: email, обязательный ник, пароль. |
-| POST | `/api/auth/login` | Вход и получение JWT. |
-| GET | `/api/auth/me` | Профиль по Bearer-токену. |
-| GET | `/api/favorites?limit=20&offset=0` | Избранное пользователя; нужен Bearer-токен. |
+| POST | `/api/auth/register` | Регистрация |
+| POST | `/api/auth/login` | Вход |
+| POST | `/api/auth/logout` | Удаление cookie, ответ 204. |
+| GET | `/api/auth/me` | Профиль по cookie|
+| GET | `/api/favorites?limit=20&offset=0` | Избранное пользователя; нужна авторизация. |
 | PUT | `/api/favorites/{store}/{packageName}` | Добавить сохранённую карточку в избранное. |
 | DELETE | `/api/favorites/{store}/{packageName}` | Удалить карточку из избранного. |
-| GET | `/api/history?limit=20&offset=0` | История просмотров текущего пользователя; нужен Bearer-токен. |
+| GET | `/api/history?limit=20&offset=0` | История просмотров текущего пользователя; нужна авторизация. |
 | GET | `/api/apps/{package_name}` | Свежая карточка из БД или Google Play; успешный GET записывается в историю. Переданный неверный JWT даёт 401. |
 | GET | `/api/search?q=google chrome` | Поиск по словам: до 5 карточек в порядке выдачи Google Play. В `q` можно передать ссылку Google Play или RuStore — вернётся одна карточка. |
 

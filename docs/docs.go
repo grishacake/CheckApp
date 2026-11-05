@@ -20,5 +20,5 @@ func Register(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("GET /docs", redirect)
 	mux.HandleFunc("GET /docs/{$}", redirect)
-	mux.HandleFunc("GET /docs/", httpSwagger.Handler(httpSwagger.URL("/openapi.json")))
+	mux.HandleFunc("GET /docs/", httpSwagger.Handler(httpSwagger.URL("/openapi.json"), httpSwagger.UIConfig(map[string]string{"withCredentials": "true"})))
 }

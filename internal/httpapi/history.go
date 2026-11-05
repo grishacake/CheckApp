@@ -37,7 +37,7 @@ func (h *HistoryHandler) RegisterRoutes(mux *http.ServeMux) {
 func (h *HistoryHandler) WrapCard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if len(r.Header.Values("Authorization")) == 0 {
+		if len(r.CookiesNamed(AuthCookieName)) == 0 {
 			next.ServeHTTP(w, r)
 			return
 		}

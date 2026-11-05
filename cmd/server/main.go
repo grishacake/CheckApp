@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,10 +42,9 @@ func run(ctx context.Context) error {
 		addr = ":" + port
 	}
 
-	// Один клиент на карточку и поиск, чтобы пауза между запросами к Google была общей.
 	gp := googleplay.New()
 	if front, ok := os.LookupEnv("GP_FRONT_HOST"); ok {
-		gp.FrontHost = front // пустое значение — ходить на play.google.com напрямую
+		gp.FrontHost = front
 	}
 	if proxy := os.Getenv("GP_PROXY_URL"); proxy != "" {
 		if err := gp.UseProxy(proxy); err != nil {
@@ -69,6 +70,27 @@ func run(ctx context.Context) error {
 	users := postgres.NewUserRepository(pool)
 	authService := auth.NewService(users)
 	authHandler := httpapi.NewAuthHandler(authService, tokens, 5*time.Second)
+	secure := false
+	if value := os.Getenv("COOKIE_SECURE"); value != "" {
+		secure, err = strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("COOKIE_SECURE: %w", err)
+		}
+	}
+	sameSite := http.SameSiteLaxMode
+	switch strings.ToLower(os.Getenv("COOKIE_SAMESITE")) {
+	case "", "lax":
+	case "strict":
+		sameSite = http.SameSiteStrictMode
+	case "none":
+		if !secure {
+			return errors.New("COOKIE_SAMESITE=none requires COOKIE_SECURE=true")
+		}
+		sameSite = http.SameSiteNoneMode
+	default:
+		return errors.New("COOKIE_SAMESITE must be lax, strict or none")
+	}
+	authHandler.WithCookieOptions(secure, sameSite)
 	favoritesHandler := httpapi.NewFavoriteHandler(postgres.NewFavoritesRepository(pool), authService, tokens, 5*time.Second)
 	historyRepo := postgres.NewHistoryRepository(pool)
 	historyHandler := httpapi.NewHistoryHandler(historyRepo, authService, tokens, 5*time.Second)
@@ -128,10 +150,49 @@ func serve(ctx context.Context, server *http.Server) error {
 }
 
 func withCORS(next http.Handler) http.Handler {
+	origins := os.Getenv("CORS_ORIGINS")
+	if origins == "" {
+		origins = "http://localhost:3000,http://localhost:5173"
+	}
+	allowed := make(map[string]bool)
+	for _, origin := range strings.Split(origins, ",") {
+		origin = strings.TrimSpace(origin)
+		u, err := url.Parse(origin)
+		if err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" {
+			allowed[origin] = true
+		}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Add("Vary", "Origin")
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		trusted := func(origin string) bool { return allowed[origin] || origin == scheme+"://"+r.Host }
+		origin := r.Header.Get("Origin")
+		deny := func() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"Недопустимый источник запроса"}`))
+		}
+		if len(r.Header.Values("Origin")) > 1 || (origin != "" && !trusted(origin)) {
+			deny()
+			return
+		}
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+		unsafe := r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS"
+		if unsafe && origin == "" {
+			referer, err := url.Parse(r.Referer())
+			if err != nil || referer == nil || !trusted(referer.Scheme+"://"+referer.Host) {
+				deny()
+				return
+			}
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
