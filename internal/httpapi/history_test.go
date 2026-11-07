@@ -102,32 +102,32 @@ func TestCardAuthRejectsBeforeProviderAndAssociatesVerifiedUser(t *testing.T) {
 	tokens := newHandlerTokens(t)
 	valid, _ := tokens.Issue("live-user")
 	deleted, _ := tokens.Issue("deleted-user")
-	for _, authorization := range []string{"Bearer invalid", "", "Bearer " + valid + " extra"} {
+	for _, cookie := range []string{"invalid", "", valid + "extra"} {
 		r := httptest.NewRequest(http.MethodGet, "/api/apps/com.uchi.app", nil)
-		r.Header.Add("Authorization", authorization)
+		r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: cookie})
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		if w.Code != http.StatusUnauthorized {
-			t.Fatalf("bad auth status=%d for %q", w.Code, authorization)
+			t.Fatalf("bad cookie status=%d", w.Code)
 		}
 	}
 	r := httptest.NewRequest(http.MethodGet, "/api/apps/com.uchi.app", nil)
-	r.Header.Add("Authorization", "Bearer "+valid)
-	r.Header.Add("Authorization", "Bearer "+valid)
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: valid})
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: valid})
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("multiple Authorization headers accepted: %d", w.Code)
+		t.Fatalf("multiple auth cookies accepted: %d", w.Code)
 	}
 	r = httptest.NewRequest(http.MethodGet, "/api/apps/com.uchi.app", nil)
-	r.Header.Set("Authorization", "Bearer "+deleted)
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: deleted})
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized || calls != 0 || repo.records != 0 {
 		t.Fatalf("deleted user reached provider: status=%d calls=%d records=%d", w.Code, calls, repo.records)
 	}
 	r = httptest.NewRequest(http.MethodGet, "/api/apps/com.uchi.app", nil)
-	r.Header.Set("Authorization", "Bearer "+valid)
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: valid})
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusOK || repo.user != "live-user" || calls != 1 {
@@ -225,10 +225,10 @@ func TestHistoryListAuthPaginationAndErrors(t *testing.T) {
 	mux := http.NewServeMux()
 	h := httpapi.NewHistoryHandler(repo, users, tokens, time.Second)
 	h.RegisterRoutes(mux)
-	call := func(path, bearer string) *httptest.ResponseRecorder {
+	call := func(path, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
-		if bearer != "" {
-			r.Header.Set("Authorization", "Bearer "+bearer)
+		if token != "" {
+			r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 		}
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
