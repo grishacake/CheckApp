@@ -10,8 +10,9 @@ import (
 )
 
 type cacheCardsStub struct {
-	get  func(context.Context, string, string, time.Duration) (model.App, error)
-	save saveCardsFunc
+	get    func(context.Context, string, string, time.Duration) (model.App, error)
+	save   saveCardsFunc
+	search func(context.Context, string, string, int, time.Duration) ([]model.App, error)
 }
 
 func (s cacheCardsStub) GetFresh(ctx context.Context, store, packageName string, ttl time.Duration) (model.App, error) {
@@ -19,6 +20,12 @@ func (s cacheCardsStub) GetFresh(ctx context.Context, store, packageName string,
 }
 func (s cacheCardsStub) Save(ctx context.Context, store string, cards []model.App) error {
 	return s.save(ctx, store, cards)
+}
+func (s cacheCardsStub) SearchByText(ctx context.Context, store, query string, limit int, maxAge time.Duration) ([]model.App, error) {
+	if s.search != nil {
+		return s.search(ctx, store, query, limit, maxAge)
+	}
+	return nil, nil
 }
 
 type catalogGetFunc func(context.Context, string) (model.App, error)
@@ -168,5 +175,108 @@ func TestCatalogCanceledRequest(t *testing.T) {
 	catalog := NewCatalog(nil, nil, nil, "google_play", time.Hour)
 	if _, err := catalog.GetApp(ctx, "com.example.app"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled request reached dependencies: %v", err)
+	}
+}
+
+func TestCatalogSearchLocalHitSkipsProviderAndSave(t *testing.T) {
+	localCard := model.App{PackageName: "com.example.app", Name: "Local Result"}
+	repo := cacheCardsStub{
+		search: func(_ context.Context, store, query string, limit int, maxAge time.Duration) ([]model.App, error) {
+			if store != "google_play" || query != "example" || limit != 5 || maxAge != DefaultSearchTTL {
+				t.Fatalf("unexpected search params: store=%s query=%s limit=%d maxAge=%v", store, query, limit, maxAge)
+			}
+			return []model.App{localCard}, nil
+		},
+		save: func(context.Context, string, []model.App) error {
+			t.Fatal("local search hit must not write to the database")
+			return nil
+		},
+	}
+	source := catalogSource{
+		cards: []model.App{{PackageName: "com.example.provider", Name: "Provider Result"}},
+	}
+	catalog := NewCatalog(source, source, repo, "google_play", time.Hour)
+
+	results, err := catalog.Search(context.Background(), "example", 5)
+	if err != nil {
+		t.Fatalf("search failed: %v", err)
+	}
+	if len(results) != 1 || results[0] != localCard {
+		t.Fatalf("wanted localCard, got %#v", results)
+	}
+}
+
+func TestCatalogSearchLocalMissFallsBackToProvider(t *testing.T) {
+	providerCard := model.App{PackageName: "com.example.provider", Name: "Provider Result"}
+	searchedLocal := false
+	saved := false
+
+	repo := cacheCardsStub{
+		search: func(context.Context, string, string, int, time.Duration) ([]model.App, error) {
+			searchedLocal = true
+			return nil, nil // miss
+		},
+		save: func(_ context.Context, store string, cards []model.App) error {
+			if store != "google_play" || len(cards) != 1 || cards[0] != providerCard {
+				t.Fatalf("unexpected save arguments: store=%s cards=%#v", store, cards)
+			}
+			saved = true
+			return nil
+		},
+	}
+	source := catalogSource{cards: []model.App{providerCard}}
+	catalog := NewCatalog(source, source, repo, "google_play", time.Hour)
+
+	results, err := catalog.Search(context.Background(), "example", 5)
+	if err != nil {
+		t.Fatalf("search failed: %v", err)
+	}
+	if !searchedLocal {
+		t.Fatal("expected local search check")
+	}
+	if !saved {
+		t.Fatal("expected provider results to be saved")
+	}
+	if len(results) != 1 || results[0] != providerCard {
+		t.Fatalf("wanted providerCard, got %#v", results)
+	}
+}
+
+func TestCatalogSearchLocalErrorPropagates(t *testing.T) {
+	dbErr := errors.New("search index unavailable")
+	repo := cacheCardsStub{
+		search: func(context.Context, string, string, int, time.Duration) ([]model.App, error) {
+			return nil, dbErr
+		},
+	}
+	source := catalogSource{
+		cards: []model.App{{PackageName: "com.example.provider", Name: "Provider Result"}},
+	}
+	catalog := NewCatalog(source, source, repo, "google_play", time.Hour)
+
+	_, err := catalog.Search(context.Background(), "example", 5)
+	if !errors.Is(err, ErrCacheRead) || !errors.Is(err, dbErr) {
+		t.Fatalf("expected ErrCacheRead wrapping dbErr, got %v", err)
+	}
+}
+
+func TestCatalogSearchDisabledSearchTTL(t *testing.T) {
+	providerCard := model.App{PackageName: "com.example.provider", Name: "Provider Result"}
+	repo := cacheCardsStub{
+		search: func(context.Context, string, string, int, time.Duration) ([]model.App, error) {
+			t.Fatal("SearchByText must not be called when searchTTL is 0")
+			return nil, nil
+		},
+		save: func(context.Context, string, []model.App) error { return nil },
+	}
+	source := catalogSource{cards: []model.App{providerCard}}
+	catalog := NewCatalog(source, source, repo, "google_play", time.Hour).WithSearchTTL(0)
+
+	results, err := catalog.Search(context.Background(), "example", 5)
+	if err != nil {
+		t.Fatalf("search failed: %v", err)
+	}
+	if len(results) != 1 || results[0] != providerCard {
+		t.Fatalf("wanted providerCard, got %#v", results)
 	}
 }

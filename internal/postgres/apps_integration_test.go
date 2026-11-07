@@ -184,4 +184,40 @@ func TestAppsIntegration(t *testing.T) {
 	if _, err := repo.GetFresh(ctx, storeCode, card.PackageName, time.Hour); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("inactive store served a cached card: %v", err)
 	}
+
+	// Re-activate store to verify full-text search.
+	if _, err := pool.Exec(ctx, `UPDATE public.stores SET is_active = TRUE WHERE id = $1`, storeID); err != nil {
+		t.Fatal(err)
+	}
+	ftsCard := model.App{
+		PackageName: "com.test.searchapp",
+		Name:        "Супер Мессенджер Pro",
+	}
+	if err := repo.Save(ctx, storeCode, []model.App{ftsCard}); err != nil {
+		t.Fatalf("save for FTS: %v", err)
+	}
+	// Test Russian stem match
+	foundRu, err := repo.SearchByText(ctx, storeCode, "мессенджеры", 5, time.Hour)
+	if err != nil {
+		t.Fatalf("search Russian stem: %v", err)
+	}
+	if len(foundRu) != 1 || foundRu[0].PackageName != ftsCard.PackageName {
+		t.Fatalf("expected to find ftsCard by Russian stem, got %#v", foundRu)
+	}
+	// Test English word match
+	foundEn, err := repo.SearchByText(ctx, storeCode, "Pro", 5, time.Hour)
+	if err != nil {
+		t.Fatalf("search English word: %v", err)
+	}
+	if len(foundEn) != 1 || foundEn[0].PackageName != ftsCard.PackageName {
+		t.Fatalf("expected to find ftsCard by English word, got %#v", foundEn)
+	}
+	// Expired search window must return nothing
+	foundExpired, err := repo.SearchByText(ctx, storeCode, "мессенджер", 5, time.Nanosecond)
+	if err != nil {
+		t.Fatalf("search expired: %v", err)
+	}
+	if len(foundExpired) != 0 {
+		t.Fatalf("expected 0 results for expired window, got %d", len(foundExpired))
+	}
 }

@@ -187,6 +187,34 @@ func TestSearchByLinkErrors(t *testing.T) {
 	}
 }
 
+func TestSearchPersistenceErrorsAreInternal(t *testing.T) {
+	for _, tc := range []struct {
+		sentinel error
+		message  string
+	}{
+		{app.ErrCacheRead, "Не удалось прочитать сохранённые данные приложения"},
+		{app.ErrPersistence, "Не удалось сохранить результаты поиска"},
+	} {
+		t.Run(tc.sentinel.Error(), func(t *testing.T) {
+			rec := doSearch(t, func(context.Context, string, int) ([]model.App, error) {
+				return nil, fmt.Errorf("storage detail: %w; %w", tc.sentinel, context.DeadlineExceeded)
+			}, "q=telegram")
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want 500; body = %s", rec.Code, rec.Body)
+			}
+			var body struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error != tc.message {
+				t.Errorf("error = %q, want %q", body.Error, tc.message)
+			}
+		})
+	}
+}
+
 func TestSearchByLinkPersistenceErrorsAreInternal(t *testing.T) {
 	link := "q=" + url.QueryEscape("https://apps.rustore.ru/app/com.uchi.app")
 	for _, sentinel := range []error{app.ErrCacheRead, app.ErrPersistence} {
