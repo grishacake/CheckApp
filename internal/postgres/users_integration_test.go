@@ -65,7 +65,7 @@ func TestUsersIntegration(t *testing.T) {
 		req := httptest.NewRequest(method, path, strings.NewReader(string(payload)))
 		req.Header.Set("Content-Type", "application/json")
 		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+			req.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 		}
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -100,12 +100,11 @@ func TestUsersIntegration(t *testing.T) {
 
 	credentials := map[string]string{"email": email, "password": password}
 	w = request(mux, "POST", "/api/auth/login", credentials, "", http.StatusOK)
-	var login struct {
-		AccessToken string `json:"access_token"`
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != httpapi.AuthCookieName || cookies[0].Value == "" {
+		t.Fatal("login did not set an auth cookie")
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil || login.AccessToken == "" {
-		t.Fatal("login did not return a token")
-	}
+	token := cookies[0].Value
 
 	// Recreate connections and handlers: the new service has no in-memory users.
 	pool.Close()
@@ -115,7 +114,7 @@ func TestUsersIntegration(t *testing.T) {
 	}
 	pool = newPool
 	mux = newHandler()
-	w = request(mux, "GET", "/api/auth/me", nil, login.AccessToken, http.StatusOK)
+	w = request(mux, "GET", "/api/auth/me", nil, token, http.StatusOK)
 	var profile model.User
 	if err := json.Unmarshal(w.Body.Bytes(), &profile); err != nil || profile != registered {
 		t.Fatal("profile did not survive recreation of the pool and service")
@@ -130,5 +129,5 @@ func TestUsersIntegration(t *testing.T) {
 	if _, err := pool.Exec(ctx, "DELETE FROM public.users WHERE id = $1", registered.ID); err != nil {
 		t.Fatal(err)
 	}
-	request(mux, "GET", "/api/auth/me", nil, login.AccessToken, http.StatusUnauthorized)
+	request(mux, "GET", "/api/auth/me", nil, token, http.StatusUnauthorized)
 }
