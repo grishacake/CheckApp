@@ -37,6 +37,14 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	searchTTL := app.DefaultSearchTTL
+	if val := os.Getenv("APP_SEARCH_TTL"); val != "" {
+		parsed, err := app.ParseCacheTTL(val)
+		if err != nil {
+			return fmt.Errorf("APP_SEARCH_TTL: %w", err)
+		}
+		searchTTL = parsed
+	}
 	addr := ":8080"
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port
@@ -63,7 +71,7 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 	log.Print("PostgreSQL connection established")
-	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play", cacheTTL)
+	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play", cacheTTL).WithSearchTTL(searchTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
 	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second)
 

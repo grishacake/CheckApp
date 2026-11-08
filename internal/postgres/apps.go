@@ -51,6 +51,50 @@ func (r *AppRepository) GetFresh(ctx context.Context, storeCode, packageName str
 	return decodeStoredApp(metadata, packageName)
 }
 
+// SearchByText searches apps in the specified store using full-text search against the app name.
+// Only records scraped within the maxAge interval are considered.
+func (r *AppRepository) SearchByText(ctx context.Context, storeCode, query string, limit int, maxAge time.Duration) ([]model.App, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if maxAge <= 0 || limit <= 0 || strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT sa.store_app_id, sa.metadata
+		FROM public.store_apps sa
+		JOIN public.stores s ON s.id = sa.store_id
+		WHERE s.code = $1 AND s.is_active = TRUE
+		  AND (sa.search_vector @@ plainto_tsquery('russian', $2) OR sa.search_vector @@ plainto_tsquery('simple', $2))
+		  AND sa.scraped_at > NOW() - make_interval(secs => $3::double precision)
+		  AND sa.scraped_at <= NOW()
+		ORDER BY (ts_rank(sa.search_vector, plainto_tsquery('russian', $2)) + ts_rank(sa.search_vector, plainto_tsquery('simple', $2))) DESC
+		LIMIT $4`, storeCode, query, maxAge.Seconds(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("search local apps: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.App
+	for rows.Next() {
+		var storeAppID string
+		var metadata []byte
+		if err := rows.Scan(&storeAppID, &metadata); err != nil {
+			return nil, fmt.Errorf("scan local app: %w", err)
+		}
+		card, err := decodeStoredApp(metadata, storeAppID)
+		if err != nil {
+			continue
+		}
+		results = append(results, card)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate local apps: %w", err)
+	}
+	return results, nil
+}
+
 func decodeStoredApp(metadata []byte, packageName string) (model.App, error) {
 	var card model.App
 	if err := json.Unmarshal(metadata, &card); err != nil {
@@ -125,8 +169,9 @@ func (r *AppRepository) Save(ctx context.Context, storeCode string, cards []mode
 				return fmt.Errorf("insert app: %w", err)
 			}
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO public.store_apps (app_id, store_id, store_app_id, metadata, scraped_at)
-				VALUES ($1, $2, $3, $4, clock_timestamp())`, appID, storeID, item.card.PackageName, item.metadata); err != nil {
+				INSERT INTO public.store_apps (app_id, store_id, store_app_id, metadata, scraped_at, search_vector)
+				VALUES ($1, $2, $3, $4, clock_timestamp(), to_tsvector('russian', $5) || to_tsvector('simple', $5))`,
+				appID, storeID, item.card.PackageName, item.metadata, item.card.Name); err != nil {
 				return fmt.Errorf("insert store app: %w", err)
 			}
 		case err != nil:
@@ -138,8 +183,11 @@ func (r *AppRepository) Save(ctx context.Context, storeCode string, cards []mode
 				return fmt.Errorf("update app: %w", err)
 			}
 			if _, err := tx.Exec(ctx, `
-				UPDATE public.store_apps SET metadata = $3, scraped_at = clock_timestamp()
-				WHERE store_id = $1 AND store_app_id = $2`, storeID, item.card.PackageName, item.metadata); err != nil {
+				UPDATE public.store_apps
+				SET metadata = $3, scraped_at = clock_timestamp(),
+				    search_vector = to_tsvector('russian', $4) || to_tsvector('simple', $4)
+				WHERE store_id = $1 AND store_app_id = $2`,
+				storeID, item.card.PackageName, item.metadata, item.card.Name); err != nil {
 				return fmt.Errorf("update store app: %w", err)
 			}
 		}

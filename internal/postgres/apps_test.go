@@ -59,3 +59,29 @@ func TestGetFreshDisabledOrCanceled(t *testing.T) {
 		t.Fatalf("cancellation lost: %v", err)
 	}
 }
+
+func TestSearchByTextDisabledOrCanceled(t *testing.T) {
+	repo := NewAppRepository(nil)
+	for _, tc := range []struct {
+		query  string
+		limit  int
+		maxAge time.Duration
+	}{
+		{"", 5, time.Hour},
+		{"   ", 5, time.Hour},
+		{"test", 0, time.Hour},
+		{"test", -1, time.Hour},
+		{"test", 5, 0},
+		{"test", 5, -time.Hour},
+	} {
+		res, err := repo.SearchByText(context.Background(), "google_play", tc.query, tc.limit, tc.maxAge)
+		if err != nil || res != nil {
+			t.Fatalf("expected nil results for %+v, got res=%#v err=%v", tc, res, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := repo.SearchByText(ctx, "google_play", "test", 5, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
+	}
+}

@@ -71,6 +71,11 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return // клиент ушёл
 	}
 	if err != nil {
+		if errors.Is(err, app.ErrCacheRead) {
+			log.Printf("read cached search results %q: %v", query, err)
+			writeError(w, http.StatusInternalServerError, "Не удалось прочитать сохранённые данные приложения")
+			return
+		}
 		if errors.Is(err, app.ErrPersistence) {
 			log.Printf("save search results %q: %v", query, err)
 			writeError(w, http.StatusInternalServerError, "Не удалось сохранить результаты поиска")
