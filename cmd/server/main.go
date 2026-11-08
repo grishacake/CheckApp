@@ -17,9 +17,11 @@ import (
 	"app-grabber-backend/docs"
 	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/auth"
+	"app-grabber-backend/internal/comparison"
 	"app-grabber-backend/internal/googleplay"
 	"app-grabber-backend/internal/httpapi"
 	"app-grabber-backend/internal/postgres"
+	"app-grabber-backend/internal/rustore"
 )
 
 func main() {
@@ -71,7 +73,8 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 	log.Print("PostgreSQL connection established")
-	catalog := app.NewCatalog(gp, gp, postgres.NewAppRepository(pool), "google_play", cacheTTL).WithSearchTTL(searchTTL)
+	cards := postgres.NewAppRepository(pool)
+	catalog := app.NewCatalog(gp, gp, cards, "google_play", cacheTTL).WithSearchTTL(searchTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
 	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second)
 
@@ -109,6 +112,11 @@ func run(ctx context.Context) error {
 	authHandler.RegisterRoutes(mux)
 	favoritesHandler.RegisterRoutes(mux)
 	historyHandler.RegisterRoutes(mux)
+	compare := httpapi.ComparisonHandler{
+		Service: &comparison.Service{GooglePlay: gp, RuStore: rustore.Client{HTTP: &http.Client{Timeout: 10 * time.Second}}, Cache: cards, TTL: cacheTTL, StoreTimeout: 9 * time.Second},
+		Store:   postgres.NewComparisonRepository(pool), History: historyHandler,
+	}
+	compare.RegisterRoutes(mux)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if _, err := w.Write([]byte("ok")); err != nil {
