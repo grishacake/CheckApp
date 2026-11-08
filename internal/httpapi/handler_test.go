@@ -121,7 +121,7 @@ func TestGetAppSuccess(t *testing.T) {
 
 func TestGetAppInvalidPackageName(t *testing.T) {
 	for _, id := range []string{
-		"invalid", "Com.uchi.app", "com.Uchi.app", "com.uchi.APP",
+		"invalid",
 		"com..app", "com.1app", "com.app-name", "com.app%20", "com.app%2Fextra",
 	} {
 		t.Run(id, func(t *testing.T) {
@@ -140,20 +140,33 @@ func TestGetAppInvalidPackageName(t *testing.T) {
 	}
 }
 
-func TestGetAppAllowsDigitsAndUnderscores(t *testing.T) {
-	const id = "com.example.my_app2"
-	router := newRouter(providerFunc(func(_ context.Context, got string) (model.App, error) {
-		if got != id {
-			t.Errorf("provider got %q, want %q", got, id)
-		}
-		card := exampleApp()
-		card.PackageName = got
-		return card, nil
-	}), time.Second)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/apps/"+id, nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+func TestGetAppPreservesPackageName(t *testing.T) {
+	for _, id := range []string{
+		"com.example.my_app2", "Com.uchi.app", "com.Uchi.app", "com.uchi.APP",
+		"com.example.calculatorKSA1211",
+	} {
+		t.Run(id, func(t *testing.T) {
+			router := newRouter(providerFunc(func(_ context.Context, got string) (model.App, error) {
+				if got != id {
+					t.Errorf("provider got %q, want %q", got, id)
+				}
+				card := exampleApp()
+				card.PackageName = got
+				return card, nil
+			}), time.Second)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/apps/"+id, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+			}
+			var card model.App
+			if err := json.Unmarshal(w.Body.Bytes(), &card); err != nil {
+				t.Fatal(err)
+			}
+			if card.PackageName != id {
+				t.Errorf("response package name = %q, want %q", card.PackageName, id)
+			}
+		})
 	}
 }
 
