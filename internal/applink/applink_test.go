@@ -15,8 +15,8 @@ func TestPackageName(t *testing.T) {
 		{"https://apps.rustore.ru/app/ru.ozon.app.android", "ru.ozon.app.android", true},
 		{"https://apps.rustore.ru/app/ru.ozon.app.android/", "ru.ozon.app.android", true},
 		{"https://apps.rustore.ru/app/ru.ozon.app.android?utm_source=tg", "ru.ozon.app.android", true},
-		{"https://apps.rustore.ru/app/com.example.calculatorKSA1211", "com.example.calculatorKSA1211", true},
-		{"https://play.google.com/store/apps/details?id=Com.Uchi.APP", "Com.Uchi.APP", true},
+		{"https://apps.rustore.ru/app/com.example.calculatorKSA1211", "", false},
+		{"https://play.google.com/store/apps/details?id=Com.Uchi.APP", "", false},
 
 		{"telegram", "", false},
 		{"com.uchi.app", "", false},

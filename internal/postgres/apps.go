@@ -197,3 +197,19 @@ func (r *AppRepository) Save(ctx context.Context, storeCode string, cards []mode
 	}
 	return nil
 }
+
+// Lookup also returns expired cards so comparisons can survive a store outage.
+func (r *AppRepository) Lookup(ctx context.Context, store, id string) (model.App, time.Time, error) {
+	var data []byte
+	var at time.Time
+	err := r.pool.QueryRow(ctx, `SELECT sa.metadata,sa.scraped_at FROM public.store_apps sa
+ JOIN public.stores s ON sa.store_id=s.id WHERE s.code=$1 AND s.is_active AND sa.store_app_id=$2`, store, id).Scan(&data, &at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.App{}, at, app.ErrNotFound
+	}
+	if err != nil {
+		return model.App{}, at, err
+	}
+	card, err := decodeStoredApp(data, id)
+	return card, at.UTC(), err
+}
