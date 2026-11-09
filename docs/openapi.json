@@ -945,7 +945,7 @@
             "format": "double",
             "minimum": 0,
             "maximum": 5,
-            "description": "Рейтинг от 0 до 5.",
+            "description": "Рейтинг от 0 до 5. Значение 0 означает, что у приложения ещё нет оценок.",
             "example": 4.2
           },
           "age_rating": {
