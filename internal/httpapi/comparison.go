@@ -22,9 +22,17 @@ type ComparisonHandler struct {
 }
 
 func (h ComparisonHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.Handle("GET /api/compare", h.History.WrapCard(http.HandlerFunc(h.compare)))
+	wrap := func(handler http.HandlerFunc) http.Handler {
+		authenticated := h.History.WrapCard(handler)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+			defer cancel()
+			authenticated.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	mux.Handle("GET /api/compare", wrap(h.compare))
 	for _, pattern := range []string{"GET /api/compare/history", "GET /api/compare/favorites", "PUT /api/compare/favorites", "DELETE /api/compare/favorites"} {
-		mux.Handle(pattern, h.History.WrapCard(http.HandlerFunc(h.collection)))
+		mux.Handle(pattern, wrap(h.collection))
 	}
 }
 
@@ -45,8 +53,7 @@ func (h ComparisonHandler) compare(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
-	defer cancel()
+	ctx := r.Context()
 	result, err := h.Service.Compare(ctx, p)
 	if h.History.handleError(w, r, ctx, err) {
 		return

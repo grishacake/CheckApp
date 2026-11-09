@@ -67,7 +67,7 @@ func TestComparisonRoutes(t *testing.T) {
 			handler := httpapi.ComparisonHandler{Service: &comparison.Service{GooglePlay: provider(tc.gpErr), RuStore: provider(tc.ruErr), Cache: comparisonCache{tc.age}, TTL: 24 * time.Hour, StoreTimeout: time.Second}, Store: records, History: httpapi.NewHistoryHandler(nil, favoriteUsersStub{}, tokens, time.Second)}
 			mux := http.NewServeMux()
 			handler.RegisterRoutes(mux)
-			url := "/api/compare?google_play=com.Google&rustore=ru.Store"
+			url := "/api/compare?google_play=com.google&rustore=ru.store"
 			token, err := tokens.Issue("test-user")
 			if err != nil {
 				t.Fatal(err)
@@ -89,10 +89,10 @@ func TestComparisonRoutes(t *testing.T) {
 			if res.Code != tc.code || body.GooglePlay.Status != tc.gpStatus || body.RuStore.Status != tc.ruStatus || body.GooglePlay.Stale != tc.stale {
 				t.Fatalf("HTTP %d: %+v", res.Code, body)
 			}
-			if body.GooglePlay.Status == "ok" && (body.GooglePlay.App == nil || body.GooglePlay.App.PackageName != "com.Google" || body.GooglePlay.FetchedAt == nil) {
+			if body.GooglePlay.Status == "ok" && (body.GooglePlay.App == nil || body.GooglePlay.App.PackageName != "com.google" || body.GooglePlay.FetchedAt == nil) {
 				t.Fatal(body.GooglePlay)
 			}
-			if body.RuStore.Status == "ok" && (body.RuStore.App == nil || body.RuStore.App.PackageName != "ru.Store") {
+			if body.RuStore.Status == "ok" && (body.RuStore.App == nil || body.RuStore.App.PackageName != "ru.store") {
 				t.Fatal(body.RuStore)
 			}
 			request("HEAD", url, true)
@@ -100,7 +100,7 @@ func TestComparisonRoutes(t *testing.T) {
 			if len(records.records) != tc.records {
 				t.Fatal(records.records)
 			}
-			if tc.records == 1 && records.records[0] != (comparison.Pair{GooglePlay: "com.Google", RuStore: "ru.Store"}) {
+			if tc.records == 1 && records.records[0] != (comparison.Pair{GooglePlay: "com.google", RuStore: "ru.store"}) {
 				t.Fatal(records.records)
 			}
 			if w := request("GET", "/api/compare?google_play=bad", false); w.Code != 400 {
@@ -108,6 +108,20 @@ func TestComparisonRoutes(t *testing.T) {
 			}
 			if w := request("PUT", "/api/compare/favorites", false); w.Code != 401 {
 				t.Fatal(w.Code)
+			}
+			for _, query := range []string{
+				"?google_play=com.Google&rustore=ru.store",
+				"?google_play=com.google&rustore=ru.Store",
+			} {
+				for _, route := range []struct{ method, path string }{
+					{"GET", "/api/compare"},
+					{"PUT", "/api/compare/favorites"},
+					{"DELETE", "/api/compare/favorites"},
+				} {
+					if w := request(route.method, route.path+query, true); w.Code != 400 {
+						t.Fatalf("%s %s%s: HTTP %d", route.method, route.path, query, w.Code)
+					}
+				}
 			}
 		})
 	}

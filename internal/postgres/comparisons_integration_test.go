@@ -29,7 +29,7 @@ func TestComparisonCollectionsIntegration(t *testing.T) {
 	}
 	defer pool.Exec(ctx, `DELETE FROM public.users WHERE id=$1`, user)
 	repo := NewComparisonRepository(pool)
-	pair := comparison.Pair{GooglePlay: "com.First", RuStore: "ru.Second"}
+	pair := comparison.Pair{GooglePlay: "com.first", RuStore: "ru.second"}
 	for i := 0; i < 2; i++ {
 		if err := repo.Record(ctx, user, pair); err != nil {
 			t.Fatal(err)

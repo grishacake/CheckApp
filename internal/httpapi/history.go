@@ -52,7 +52,7 @@ func (h *HistoryHandler) WrapCard(next http.Handler) http.Handler {
 			if _, err := h.users.GetByID(ctx, id); h.handleError(w, r, ctx, err) {
 				return
 			}
-			if r.Context().Err() != nil {
+			if h.handleError(w, r, r.Context(), nil) {
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -95,7 +95,7 @@ func (h *HistoryHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HistoryHandler) handleError(w http.ResponseWriter, r *http.Request, ctx context.Context, err error) bool {
-	if r.Context().Err() != nil {
+	if errors.Is(r.Context().Err(), context.Canceled) {
 		return true
 	}
 	if ctx.Err() != nil {

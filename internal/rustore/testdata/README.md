@@ -10,7 +10,7 @@
 | `com.unicostudio.braintest.html.gz` | https://www.rustore.ru/catalog/app/com.unicostudio.braintest | Игра с вложенной категорией |
 | `mobi.avva.lider.html.gz` | https://www.rustore.ru/catalog/app/mobi.avva.lider | Нет оценок, нет aggregateRating |
 | `com.gs.doubler.yourname.html.gz` | https://www.rustore.ru/catalog/app/com.gs.doubler.yourname | Второй пример без оценок |
-| `com.example.calculatorKSA1211.html.gz` | https://www.rustore.ru/catalog/app/com.example.calculatorKSA1211 | Заглавные буквы в package name, пробел в имени разработчика |
+| `com.example.calculatorKSA1211.html.gz` | https://www.rustore.ru/catalog/app/com.example.calculatorKSA1211 | Отклонение package name с заглавными буквами |
 
 Ожидаемые рейтинги соответствуют видимой HTML-микроразметке карточек: значения
 в JSON-LD этих же страниц иногда округлены иначе. При обновлении снимков

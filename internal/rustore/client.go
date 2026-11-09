@@ -19,7 +19,11 @@ func (c Client) GetApp(ctx context.Context, id string) (model.App, error) {
 	if err != nil {
 		return model.App{}, err
 	}
-	resp, err := c.HTTP.Do(req)
+	client := *c.HTTP
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return model.App{}, err
 	}

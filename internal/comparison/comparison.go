@@ -3,6 +3,7 @@ package comparison
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"app-grabber-backend/internal/app"
@@ -77,6 +78,7 @@ func (s *Service) lookup(ctx context.Context, store, id string, provider app.Pro
 		return Result{Status: "not_found"}, nil
 	}
 	if err != nil {
+		log.Printf("compare store=%q package_name=%q: %v", store, id, err)
 		if hit {
 			return Result{Status: "ok", App: &cached, FetchedAt: &at, Stale: true}, nil
 		}
