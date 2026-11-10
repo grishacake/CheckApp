@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -17,13 +18,13 @@ import (
 
 const (
 	maxQueryLength = 100
-	// Каждая карточка — отдельный запрос к Google с паузой против капчи, поэтому немного.
 	searchLimit = 5
 )
 
 type SearchHandler struct {
 	searcher app.Searcher
 	provider app.Provider // карточка по ссылке
+	ruStore  app.Provider
 	timeout  time.Duration
 }
 
@@ -32,6 +33,11 @@ func NewSearchHandler(searcher app.Searcher, provider app.Provider, timeout time
 		timeout = 12 * time.Second
 	}
 	return &SearchHandler{searcher: searcher, provider: provider, timeout: timeout}
+}
+
+func (h *SearchHandler) WithRuStore(provider app.Provider) *SearchHandler {
+	h.ruStore = provider
+	return h
 }
 
 type searchResponse struct {
@@ -56,8 +62,13 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Ссылку проверяем до ограничения длины: с utm-метками она бывает длиннее 100 символов.
-	if packageName, ok := applink.PackageName(query); ok {
-		h.searchByLink(ctx, w, r, query, packageName)
+	link, ok := applink.Parse(query)
+	if ok {
+		h.searchByLink(ctx, w, r, query, link)
+		return
+	}
+	if link.Store != "" || strings.Contains(query, "://") {
+		writeError(w, http.StatusBadRequest, "Некорректная или неподдерживаемая ссылка на приложение")
 		return
 	}
 
@@ -71,6 +82,11 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return // клиент ушёл
 	}
 	if err != nil {
+		if errors.Is(err, app.ErrCacheRead) {
+			log.Printf("read cached search results %q: %v", query, err)
+			writeError(w, http.StatusInternalServerError, "Не удалось прочитать сохранённые данные приложения")
+			return
+		}
 		if errors.Is(err, app.ErrPersistence) {
 			log.Printf("save search results %q: %v", query, err)
 			writeError(w, http.StatusInternalServerError, "Не удалось сохранить результаты поиска")
@@ -88,8 +104,16 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 }
 
 // searchByLink отвечает карточкой приложения из ссылки. Не найдено — пустой results, как у поиска.
-func (h *SearchHandler) searchByLink(ctx context.Context, w http.ResponseWriter, r *http.Request, query, packageName string) {
-	card, err := h.provider.GetApp(ctx, packageName)
+func (h *SearchHandler) searchByLink(ctx context.Context, w http.ResponseWriter, r *http.Request, query string, link applink.Link) {
+	provider, storeName := h.provider, "Google Play"
+	if link.Store == "rustore" {
+		provider, storeName = h.ruStore, "RuStore"
+	}
+	if provider == nil {
+		writeError(w, http.StatusNotImplemented, fmt.Sprintf("Получение данных из %s ещё не подключено", storeName))
+		return
+	}
+	card, err := provider.GetApp(ctx, link.PackageName)
 	if r.Context().Err() != nil {
 		return // клиент ушёл
 	}
@@ -103,10 +127,10 @@ func (h *SearchHandler) searchByLink(ctx context.Context, w http.ResponseWriter,
 		log.Printf("save app for link %q: %v", query, err)
 		writeError(w, http.StatusInternalServerError, "Не удалось сохранить данные приложения")
 	case errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil:
-		writeError(w, http.StatusBadGateway, "Превышено время ожидания Google Play")
+		writeError(w, http.StatusBadGateway, "Превышено время ожидания "+storeName)
 	case err != nil:
 		log.Printf("search by link %q: %v", query, err)
-		writeError(w, http.StatusBadGateway, "Не удалось получить данные из Google Play")
+		writeError(w, http.StatusBadGateway, "Не удалось получить данные из "+storeName)
 	default:
 		writeSearchResults(w, query, []model.App{card})
 	}

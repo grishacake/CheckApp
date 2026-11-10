@@ -35,7 +35,7 @@ func NewTokenManager(secret string, ttl time.Duration) (*TokenManager, error) {
 }
 
 func NewTokenManagerFromEnv() (*TokenManager, error) {
-	ttl := 24 * time.Hour
+	ttl := 2 * time.Hour
 	if value := os.Getenv("JWT_TTL"); value != "" {
 		var err error
 		ttl, err = time.ParseDuration(value)
@@ -45,6 +45,8 @@ func NewTokenManagerFromEnv() (*TokenManager, error) {
 	}
 	return NewTokenManager(os.Getenv("JWT_SECRET"), ttl)
 }
+
+func (m *TokenManager) Lifetime() time.Duration { return m.ttl }
 
 func (m *TokenManager) Issue(userID string) (string, error) {
 	if strings.TrimSpace(userID) == "" {

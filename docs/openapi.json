@@ -3,7 +3,7 @@
   "info": {
     "title": "App Grabber API",
     "version": "0.1.0",
-    "description": "Авторизация: 1) зарегистрируйтесь через POST /api/auth/register; 2) выполните POST /api/auth/login; 3) скопируйте access_token; 4) нажмите Authorize и вставьте токен без префикса Bearer; 5) вызовите GET /api/auth/me. Пользователи сохраняются в PostgreSQL и остаются после перезапуска сервера."
+    "description": "Авторизация через HttpOnly-cookie: register → login → me → logout. После входа браузер сохраняет cookie автоматически. Для запросов с фронта используйте credentials: include. JWT в JSON не возвращается."
   },
   "servers": [
     {
@@ -12,7 +12,10 @@
     }
   ],
   "tags": [
-    { "name": "Auth", "description": "Регистрация, вход и профиль пользователя" },
+    {
+      "name": "Auth",
+      "description": "Регистрация, вход и профиль пользователя"
+    },
     {
       "name": "Apps",
       "description": "Карточка приложения Google Play"
@@ -25,8 +28,18 @@
       "name": "Health",
       "description": "Проверка сервера"
     },
-    { "name": "Favorites", "description": "Избранные сохранённые карточки приложений" },
-    { "name": "History", "description": "История просмотров карточек приложений" }
+    {
+      "name": "Favorites",
+      "description": "Избранные сохранённые карточки приложений"
+    },
+    {
+      "name": "History",
+      "description": "История просмотров карточек приложений"
+    },
+    {
+      "name": "Compare",
+      "description": "Сравнение Google Play и RuStore"
+    }
   ],
   "paths": {
     "/api/auth/register": {
@@ -44,7 +57,11 @@
               "schema": {
                 "$ref": "#/components/schemas/RegisterRequest"
               },
-              "example": { "email": "artem@example.com", "nickname": "Артём", "password": "example-password-123" }
+              "example": {
+                "email": "artem@example.com",
+                "nickname": "Артём",
+                "password": "example-password-123"
+              }
             }
           }
         },
@@ -61,6 +78,16 @@
           },
           "400": {
             "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "403": {
+            "description": "Origin/Referer отсутствует или не разрешён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/AuthConflict"
@@ -86,8 +113,8 @@
           "Auth"
         ],
         "operationId": "loginUser",
-        "summary": "Войти и получить JWT",
-        "description": "Возвращает access_token. Скопируйте его в Authorize без префикса Bearer, затем вызовите /api/auth/me.",
+        "summary": "Войти",
+        "description": "Устанавливает HttpOnly-cookie access_token. Возвращает только user. Браузер сохраняет cookie при credentials: include.",
         "requestBody": {
           "required": true,
           "content": {
@@ -95,17 +122,28 @@
               "schema": {
                 "$ref": "#/components/schemas/LoginRequest"
               },
-              "example": { "email": "artem@example.com", "password": "example-password-123" }
+              "example": {
+                "email": "artem@example.com",
+                "password": "example-password-123"
+              }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Токен и пользователь. Ответ не кешируется.",
+            "description": "Пользователь и cookie авторизации.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Cookie access_token; HttpOnly; Path=/; SameSite зависит от настроек; Secure выключен по умолчанию для локального HTTP, включается через COOKIE_SECURE=true.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -115,6 +153,16 @@
           },
           "401": {
             "$ref": "#/components/responses/AuthInvalidCredentials"
+          },
+          "403": {
+            "description": "Origin/Referer отсутствует или не разрешён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "413": {
             "$ref": "#/components/responses/AuthTooLarge"
@@ -138,10 +186,10 @@
         ],
         "operationId": "getCurrentUser",
         "summary": "Получить свой профиль",
-        "description": "Нажмите Authorize и вставьте access_token из ответа входа. Профиль определяется по ID из JWT. Если токен недействителен или пользователь удалён из БД, возвращается 401.",
+        "description": "Профиль по cookie, установленной при login. Для браузера: credentials: include. Авторизация только через cookie.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "responses": {
@@ -202,7 +250,9 @@
         "description": "Свежая карточка возвращается из PostgreSQL без повторного парсинга. При отсутствии или устаревании данных запрос идёт в Google Play, результат сохраняется. Каждый успешный GET записывается в историю просмотров: без токена — анонимно, с токеном — для пользователя. Переданный неверный или просроченный токен даёт 401. APP_CACHE_TTL: по умолчанию 24h, 0 отключает чтение кеша.",
         "security": [
           {},
-          { "bearerAuth": [] }
+          {
+            "cookieAuth": []
+          }
         ],
         "parameters": [
           {
@@ -212,7 +262,7 @@
             "description": "Формат обратного домена",
             "schema": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
             },
             "example": "com.uchi.app"
           }
@@ -251,6 +301,9 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
           "404": {
             "description": "-",
             "content": {
@@ -268,13 +321,14 @@
             "description": "Ошибка чтения, сохранения карточки или записи просмотра в PostgreSQL",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "Не удалось сохранить данные приложения" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Не удалось сохранить данные приложения"
+                }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/AuthUnauthorized"
           },
           "502": {
             "description": "Ответ - сбой Google Play, блокировка, тайм-аут или ошибка разбора карточки.",
@@ -308,21 +362,61 @@
     },
     "/api/history": {
       "get": {
-        "tags": ["History"],
+        "tags": [
+          "History"
+        ],
         "operationId": "listHistory",
         "summary": "Получить историю просмотров",
         "description": "Возвращает карточки, просмотренные текущим пользователем, по времени просмотра от новых к старым. Анонимные просмотры не отображаются. Ответ не кешируется.",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
-          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } }
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Страница истории просмотров.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HistoryPage" } } } },
-          "400": { "$ref": "#/components/responses/AuthBadRequest" },
-          "401": { "$ref": "#/components/responses/AuthUnauthorized" },
-          "500": { "$ref": "#/components/responses/AuthInternalError" },
-          "504": { "$ref": "#/components/responses/AuthTimeout" }
+          "200": {
+            "description": "Страница истории просмотров.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AuthBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/AuthInternalError"
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
         }
       }
     },
@@ -336,7 +430,7 @@
         "description": "Возвращает сохранённые карточки текущего пользователя без обращения к Google Play.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -396,7 +490,7 @@
         "description": "Добавляет сохранённую карточку активного магазина. Повторное добавление успешно.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -415,7 +509,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
             },
             "example": "com.uchi.app"
           }
@@ -429,6 +523,16 @@
           },
           "401": {
             "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "403": {
+            "description": "Origin/Referer отсутствует или не разрешён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
             "description": "Карточка не найдена или магазин неактивен при добавлении.",
@@ -457,7 +561,7 @@
         "description": "Удаляет приложение из избранного. Операция успешна, если записи уже нет.",
         "security": [
           {
-            "bearerAuth": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -476,7 +580,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
             },
             "example": "com.uchi.app"
           }
@@ -490,6 +594,16 @@
           },
           "401": {
             "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "403": {
+            "description": "Origin/Referer отсутствует или не разрешён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/AuthInternalError"
@@ -506,14 +620,14 @@
           "Search"
         ],
         "operationId": "searchApps",
-        "summary": "Найти приложения по словам, как в поиске Google Play",
-        "description": "Возвращает до 5 карточек в порядке выдачи Google Play. Ответ 2–4 секунды: каждая карточка — отдельный запрос к Google. Ничего не нашлось — 200 и пустой results. Если q - ссылка на карточку в Google Play или RuStore, возвращает одну карточку этого приложения (или пустой results, если его нет в Google Play).",
+        "summary": "Найти приложения по словам или получить карточку по ссылке магазина",
+        "description": "Текстовый запрос ищет до 5 карточек Google Play. Ссылка определяет магазин автоматически: Google Play или RuStore, дополнительный флаг не нужен. Для ссылки возвращается одна карточка указанного магазина или 200 и пустой results, если приложение не найдено. Неверная или неподдерживаемая ссылка возвращает 400.",
         "parameters": [
           {
             "name": "q",
             "in": "query",
             "required": true,
-            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://apps.rustore.ru/app/com.uchi.app (для ссылок ограничения длины нет)",
+            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://www.rustore.ru/catalog/app/ru.ivi.client; старый формат https://apps.rustore.ru/app/ru.ivi.client тоже поддерживается (для ссылок ограничения длины нет)",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -533,7 +647,7 @@
             }
           },
           "400": {
-            "description": "Ответ - пустой, слишком длинный или не UTF-8 запрос",
+            "description": "Пустой, слишком длинный или не UTF-8 запрос; некорректная или неподдерживаемая ссылка",
             "content": {
               "application/json": {
                 "schema": {
@@ -549,13 +663,17 @@
             "description": "Ошибка чтения кеша или сохранения карточек в PostgreSQL",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "Не удалось сохранить данные приложения" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Не удалось сохранить данные приложения"
+                }
               }
             }
           },
           "502": {
-            "description": "Ответ - Google Play не ответил или тайм-аут",
+            "description": "Google Play или RuStore не ответил, вернул некорректную страницу или превысил время ожидания",
             "content": {
               "application/json": {
                 "schema": {
@@ -569,11 +687,587 @@
           }
         }
       }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "logoutUser",
+        "summary": "Выйти из аккаунта",
+        "description": "Удаляет cookie. Работает без действующего JWT, повторный вызов тоже возвращает 204. Требует разрешённый Origin/Referer. Скопированный JWT не отзывается и действует до exp.",
+        "responses": {
+          "204": {
+            "description": "Cookie удалена.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Cookie access_token; HttpOnly; Path=/; SameSite зависит от настроек; Secure выключен по умолчанию для локального HTTP, включается через COOKIE_SECURE=true.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недопустимый источник запроса."
+          }
+        }
+      }
+    },
+    "/api/compare": {
+      "get": {
+        "tags": [
+          "Compare"
+        ],
+        "summary": "Сравнить две карточки. В историю вошедшего пользователя попадают пары с хотя бы одной карточкой.",
+        "security": [
+          {},
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "google_play",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          },
+          {
+            "name": "rustore",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Результат каждого магазина. Для ok возвращаются app и fetched_at. Подтверждённый 404 даёт not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Оба магазина недоступны, сохранённых карточек нет",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло время обработки запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compare/history": {
+      "get": {
+        "tags": [
+          "Compare"
+        ],
+        "summary": "История сравнений",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "История сравнений",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло время обработки запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compare/favorites": {
+      "get": {
+        "tags": [
+          "Compare"
+        ],
+        "summary": "Избранные сравнения",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Избранные сравнения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло время обработки запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Compare"
+        ],
+        "summary": "Добавить пару в избранное",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "google_play",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          },
+          {
+            "name": "rustore",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Готово, повторный запрос допустим"
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло время обработки запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Compare"
+        ],
+        "summary": "Удалить пару из избранного",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "google_play",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          },
+          {
+            "name": "rustore",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Готово, повторный запрос допустим"
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло время обработки запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{store}/{id}": {
+      "get": {
+        "tags": [
+          "Apps"
+        ],
+        "operationId": "getStoreApp",
+        "summary": "Получить карточку из выбранного магазина",
+        "description": "Магазины google_play и rustore. Возвращает одну карточку model.App. Свежая карточка читается из отдельного кэша магазина, отсутствующая или устаревшая загружается из этого магазина и сохраняется в PostgreSQL. Успешный GET записывается в историю карточек с выбранным магазином. Авторизация необязательна, неверная cookie даёт 401. Отсутствие приложения даёт 404, временная ошибка магазина — 502.",
+        "security": [
+          {},
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "store",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google_play",
+                "rustore"
+              ]
+            },
+            "example": "rustore"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Формат обратного домена",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+            },
+            "example": "com.uchi.app"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ответ - карточка приложения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/App"
+                },
+                "example": {
+                  "package_name": "com.uchi.app",
+                  "store_url": "https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
+                  "name": "Учи.ру",
+                  "developer": "ООО \"Учи.ру\"",
+                  "icon_url": "https://play-lh.googleusercontent.com/example-icon",
+                  "category": "Образование",
+                  "rating": 4.2,
+                  "age_rating": "3+"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неизвестный магазин или некорректный package name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Некорректный формат package_name"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthUnauthorized"
+          },
+          "404": {
+            "description": "-",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Приложение не найдено в RuStore"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения, сохранения карточки или записи просмотра в PostgreSQL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Не удалось сохранить данные приложения"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Магазин недоступен, истёк таймаут или не удалось разобрать карточку",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "$ref": "#/components/responses/AuthTimeout"
+          }
+        }
+      }
     }
   },
   "components": {
     "securitySchemes": {
-      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "access_token",
+        "description": "Устанавливается сервером при login. Ручной ввод в Swagger не нужен."
+      }
     },
     "responses": {
       "AuthBadRequest": {
@@ -647,20 +1341,12 @@
         }
       },
       "AuthUnauthorized": {
-        "description": "Отсутствует или недействителен Bearer-токен либо пользователь больше не существует.",
+        "description": "Отсутствует или недействительна cookie либо пользователь удалён.",
         "content": {
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Error"
             }
-          }
-        },
-        "headers": {
-          "WWW-Authenticate": {
-            "schema": {
-              "type": "string"
-            },
-            "example": "Bearer"
           }
         }
       }
@@ -752,21 +1438,9 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "access_token",
-          "token_type",
           "user"
         ],
         "properties": {
-          "access_token": {
-            "type": "string",
-            "description": "JWT для Authorization: Bearer <token>. Срок действия указан в exp; по умолчанию 24 часа."
-          },
-          "token_type": {
-            "type": "string",
-            "enum": [
-              "Bearer"
-            ]
-          },
           "user": {
             "$ref": "#/components/schemas/User"
           }
@@ -794,7 +1468,7 @@
           "store_url": {
             "type": "string",
             "format": "uri",
-            "description": "Ссылка на карточку Google Play."
+            "description": "Ссылка на карточку в исходном магазине Google Play или RuStore."
           },
           "name": {
             "type": "string",
@@ -821,12 +1495,12 @@
             "format": "double",
             "minimum": 0,
             "maximum": 5,
-            "description": "Рейтинг от 0 до 5.",
+            "description": "Рейтинг от 0 до 5. Значение 0 означает, что у приложения ещё нет оценок.",
             "example": 4.2
           },
           "age_rating": {
             "type": "string",
-            "description": "Возрастная метка Google Play в исходном виде: например 3+, 12+.",
+            "description": "Возрастная метка исходного магазина, например 0+, 3+, 12+.",
             "example": "3+"
           }
         },
@@ -903,22 +1577,54 @@
       },
       "View": {
         "type": "object",
-        "required": ["id", "store_app_id", "store", "app", "viewed_at"],
+        "required": [
+          "id",
+          "store_app_id",
+          "store",
+          "app",
+          "viewed_at"
+        ],
         "properties": {
-          "id": { "type": "integer", "format": "int64" },
-          "store_app_id": { "type": "integer", "format": "int64" },
-          "store": { "type": "string" },
-          "app": { "$ref": "#/components/schemas/App" },
-          "viewed_at": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store_app_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store": {
+            "type": "string"
+          },
+          "app": {
+            "$ref": "#/components/schemas/App"
+          },
+          "viewed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "HistoryPage": {
         "type": "object",
-        "required": ["history", "limit", "offset"],
+        "required": [
+          "history",
+          "limit",
+          "offset"
+        ],
         "properties": {
-          "history": { "type": "array", "items": { "$ref": "#/components/schemas/View" } },
-          "limit": { "type": "integer" },
-          "offset": { "type": "integer" }
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/View"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
         }
       },
       "SearchResult": {
@@ -937,7 +1643,7 @@
           "results": {
             "type": "array",
             "maxItems": 5,
-            "description": "Карточки в порядке выдачи Google Play.",
+            "description": "Для текста — карточки Google Play; для ссылки — одна карточка указанного в ней магазина или пустой список.",
             "items": {
               "$ref": "#/components/schemas/App"
             }
@@ -958,6 +1664,95 @@
             }
           ]
         }
+      },
+      "ComparisonStoreResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "not_found",
+              "unavailable"
+            ]
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "true для последней сохранённой карточки при временной ошибке магазина"
+          },
+          "app": {
+            "$ref": "#/components/schemas/App"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "stale"
+        ]
+      },
+      "Comparison": {
+        "type": "object",
+        "properties": {
+          "google_play": {
+            "$ref": "#/components/schemas/ComparisonStoreResult"
+          },
+          "rustore": {
+            "$ref": "#/components/schemas/ComparisonStoreResult"
+          }
+        },
+        "required": [
+          "google_play",
+          "rustore"
+        ]
+      },
+      "ComparisonEntry": {
+        "type": "object",
+        "properties": {
+          "google_play": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+            "maxLength": 255
+          },
+          "rustore": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+            "maxLength": 255
+          },
+          "saved_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "google_play",
+          "rustore",
+          "saved_at"
+        ]
+      },
+      "ComparisonPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEntry"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset"
+        ]
       }
     }
   }

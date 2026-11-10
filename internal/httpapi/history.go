@@ -37,7 +37,7 @@ func (h *HistoryHandler) RegisterRoutes(mux *http.ServeMux) {
 func (h *HistoryHandler) WrapCard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if len(r.Header.Values("Authorization")) == 0 {
+		if len(r.CookiesNamed(AuthCookieName)) == 0 {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -52,7 +52,7 @@ func (h *HistoryHandler) WrapCard(next http.Handler) http.Handler {
 			if _, err := h.users.GetByID(ctx, id); h.handleError(w, r, ctx, err) {
 				return
 			}
-			if r.Context().Err() != nil {
+			if h.handleError(w, r, r.Context(), nil) {
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -95,7 +95,7 @@ func (h *HistoryHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HistoryHandler) handleError(w http.ResponseWriter, r *http.Request, ctx context.Context, err error) bool {
-	if r.Context().Err() != nil {
+	if errors.Is(r.Context().Err(), context.Canceled) {
 		return true
 	}
 	if ctx.Err() != nil {
