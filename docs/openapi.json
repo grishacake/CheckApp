@@ -619,14 +619,14 @@
           "Search"
         ],
         "operationId": "searchApps",
-        "summary": "Найти приложения по словам, как в поиске Google Play",
-        "description": "Возвращает до 5 карточек в порядке выдачи Google Play. Ответ 2–4 секунды: каждая карточка — отдельный запрос к Google. Ничего не нашлось — 200 и пустой results. Если q - ссылка на карточку в Google Play или RuStore, возвращает одну карточку этого приложения (или пустой results, если его нет в Google Play).",
+        "summary": "Найти приложения по словам или получить карточку по ссылке магазина",
+        "description": "Текстовый запрос ищет до 5 карточек Google Play. Ссылка определяет магазин автоматически: Google Play или RuStore, дополнительный флаг не нужен. Для ссылки возвращается одна карточка указанного магазина или 200 и пустой results, если приложение не найдено. Неверная или неподдерживаемая ссылка возвращает 400.",
         "parameters": [
           {
             "name": "q",
             "in": "query",
             "required": true,
-            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://apps.rustore.ru/app/com.uchi.app (для ссылок ограничения длины нет)",
+            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://www.rustore.ru/catalog/app/ru.ivi.client; старый формат https://apps.rustore.ru/app/ru.ivi.client тоже поддерживается (для ссылок ограничения длины нет)",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -646,7 +646,7 @@
             }
           },
           "400": {
-            "description": "Ответ - пустой, слишком длинный или не UTF-8 запрос",
+            "description": "Пустой, слишком длинный или не UTF-8 запрос; некорректная или неподдерживаемая ссылка",
             "content": {
               "application/json": {
                 "schema": {
@@ -672,7 +672,7 @@
             }
           },
           "502": {
-            "description": "Ответ - Google Play не ответил или тайм-аут",
+            "description": "Google Play или RuStore не ответил, вернул некорректную страницу или превысил время ожидания",
             "content": {
               "application/json": {
                 "schema": {
@@ -1523,7 +1523,7 @@
           "results": {
             "type": "array",
             "maxItems": 5,
-            "description": "Карточки в порядке выдачи Google Play.",
+            "description": "Для текста — карточки Google Play; для ссылки — одна карточка указанного в ней магазина или пустой список.",
             "items": {
               "$ref": "#/components/schemas/App"
             }

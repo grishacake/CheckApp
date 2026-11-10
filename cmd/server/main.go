@@ -75,8 +75,10 @@ func run(ctx context.Context) error {
 	log.Print("PostgreSQL connection established")
 	cards := postgres.NewAppRepository(pool)
 	catalog := app.NewCatalog(gp, gp, cards, "google_play", cacheTTL).WithSearchTTL(searchTTL)
+	ru := rustore.Client{HTTP: &http.Client{Timeout: 10 * time.Second}}
+	ruCatalog := app.NewCatalog(ru, nil, cards, "rustore", cacheTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
-	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second)
+	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second).WithRuStore(ruCatalog)
 
 	users := postgres.NewUserRepository(pool)
 	authService := auth.NewService(users)
@@ -113,7 +115,7 @@ func run(ctx context.Context) error {
 	favoritesHandler.RegisterRoutes(mux)
 	historyHandler.RegisterRoutes(mux)
 	compare := httpapi.ComparisonHandler{
-		Service: &comparison.Service{GooglePlay: gp, RuStore: rustore.Client{HTTP: &http.Client{Timeout: 10 * time.Second}}, Cache: cards, TTL: cacheTTL, StoreTimeout: 9 * time.Second},
+		Service: &comparison.Service{GooglePlay: gp, RuStore: ru, Cache: cards, TTL: cacheTTL, StoreTimeout: 9 * time.Second},
 		Store:   postgres.NewComparisonRepository(pool), History: historyHandler,
 	}
 	compare.RegisterRoutes(mux)
