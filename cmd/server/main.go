@@ -108,6 +108,7 @@ func run(ctx context.Context) error {
 	historyRepo := postgres.NewHistoryRepository(pool)
 	historyHandler := httpapi.NewHistoryHandler(historyRepo, authService, tokens, 5*time.Second)
 	handler.WithHistory(historyRepo, "google_play")
+	ruHandler := httpapi.NewHandler(ruCatalog, 10*time.Second).WithHistory(historyRepo, "rustore")
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
@@ -126,6 +127,10 @@ func run(ctx context.Context) error {
 		}
 	})
 	mux.Handle("GET /api/apps/{id}", historyHandler.WrapCard(http.HandlerFunc(handler.GetApp)))
+	mux.Handle("GET /api/apps/{store}/{id}", historyHandler.WrapCard(httpapi.StoreAppHandler(map[string]*httpapi.Handler{
+		"google_play": handler,
+		"rustore":     ruHandler,
+	})))
 	mux.HandleFunc("GET /api/search", searchHandler.Search)
 
 	server := &http.Server{

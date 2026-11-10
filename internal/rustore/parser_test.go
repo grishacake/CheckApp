@@ -33,14 +33,6 @@ func savedPage(t *testing.T, packageName string) []byte {
 	return page
 }
 
-func TestParseRejectsUppercasePackageName(t *testing.T) {
-	const id = "com.example.calculatorKSA1211"
-	card, err := rustore.Parse(bytes.NewReader(savedPage(t, id)), id)
-	if !errors.Is(err, rustore.ErrInvalidPage) || card != (model.App{}) {
-		t.Fatalf("uppercase package name: card = %+v, error = %v", card, err)
-	}
-}
-
 func TestParseSavedPages(t *testing.T) {
 	for _, want := range []model.App{
 		{
@@ -91,6 +83,16 @@ func TestParseSavedPages(t *testing.T) {
 			IconURL:     "https://static.rustore.ru/apk/2063529769/content/ICON/85350d9d-812b-4791-9203-a31e4e84dd4d.",
 			Category:    "Викторины",
 			Rating:      0,
+			AgeRating:   "0+",
+		},
+		{
+			PackageName: "com.example.calculatorKSA1211",
+			StoreURL:    "https://www.rustore.ru/catalog/app/com.example.calculatorKSA1211",
+			Name:        "Калькулятор",
+			Developer:   "A Ks",
+			IconURL:     "https://static.rustore.ru/2026/6/1/c8/apk/2063641710/content/ICON/f97666a5-def9-4f5d-8239-f4624cdfc72e.png",
+			Category:    "Полезные инструменты",
+			Rating:      4.6,
 			AgeRating:   "0+",
 		},
 	} {

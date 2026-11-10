@@ -37,7 +37,23 @@ func (h *Handler) WithHistory(recorder HistoryRecorder, store string) *Handler {
 	return h
 }
 
+// StoreAppHandler routes a card request to the selected store's existing handler.
+func StoreAppHandler(handlers map[string]*Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handler, ok := handlers[r.PathValue("store")]
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Неизвестный магазин. Используйте google_play или rustore")
+			return
+		}
+		handler.GetApp(w, r)
+	}
+}
+
 func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
+	storeName := "Google Play"
+	if h.store == "rustore" {
+		storeName = "RuStore"
+	}
 	packageName := r.PathValue("id")
 	if !app.ValidPackageName(packageName) {
 		writeError(w, http.StatusBadRequest, "Некорректный формат package_name")
@@ -69,14 +85,14 @@ func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Не удалось сохранить данные приложения")
 		case errors.Is(err, context.DeadlineExceeded),
 			errors.As(err, &networkError) && networkError.Timeout():
-			writeError(w, http.StatusBadGateway, "Превышено время ожидания Google Play")
+			writeError(w, http.StatusBadGateway, "Превышено время ожидания "+storeName)
 		case errors.Is(err, app.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Приложение не найдено в Google Play")
+			writeError(w, http.StatusNotFound, "Приложение не найдено в "+storeName)
 		case errors.Is(err, app.ErrNotConfigured):
-			writeError(w, http.StatusNotImplemented, "Получение данных из Google Play ещё не подключено")
+			writeError(w, http.StatusNotImplemented, "Получение данных из "+storeName+" ещё не подключено")
 		default:
 			log.Printf("get app %s: %v", packageName, err)
-			writeError(w, http.StatusBadGateway, "Не удалось получить данные из Google Play")
+			writeError(w, http.StatusBadGateway, "Не удалось получить данные из "+storeName)
 		}
 		return
 	}
@@ -84,7 +100,7 @@ func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(card)
 	if err != nil {
 		log.Printf("encode app %s: %v", packageName, err)
-		writeError(w, http.StatusBadGateway, "Не удалось получить данные из Google Play")
+		writeError(w, http.StatusBadGateway, "Не удалось получить данные из "+storeName)
 		return
 	}
 	if r.Method == http.MethodGet && h.history != nil {

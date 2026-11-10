@@ -110,8 +110,8 @@ func TestComparisonRoutes(t *testing.T) {
 				t.Fatal(w.Code)
 			}
 			for _, query := range []string{
-				"?google_play=com.Google&rustore=ru.store",
-				"?google_play=com.google&rustore=ru.Store",
+				"?google_play=com.1Google&rustore=ru.store",
+				"?google_play=com.google&rustore=ru.1Store",
 			} {
 				for _, route := range []struct{ method, path string }{
 					{"GET", "/api/compare"},
