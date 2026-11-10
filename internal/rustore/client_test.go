@@ -73,12 +73,12 @@ func TestClientRejectsRedirects(t *testing.T) {
 	}
 }
 
-func TestClientRejectsUppercasePackageName(t *testing.T) {
+func TestClientRejectsInvalidPackageName(t *testing.T) {
 	client := rustore.Client{HTTP: &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) {
 		t.Fatal("invalid package name reached transport")
 		return nil, nil
 	})}}
-	if _, err := client.GetApp(context.Background(), "com.example.calculatorKSA1211"); err == nil {
-		t.Fatal("uppercase package name accepted")
+	if _, err := client.GetApp(context.Background(), "com.example/invalid"); err == nil {
+		t.Fatal("invalid package name accepted")
 	}
 }

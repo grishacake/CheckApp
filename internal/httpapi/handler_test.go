@@ -123,7 +123,6 @@ func TestGetAppInvalidPackageName(t *testing.T) {
 	for _, id := range []string{
 		"invalid",
 		"com..app", "com.1app", "com.app-name", "com.app%20", "com.app%2Fextra",
-		"Com.uchi.app", "com.Uchi.app", "com.uchi.APP", "com.example.calculatorKSA1211",
 	} {
 		t.Run(id, func(t *testing.T) {
 			calls := 0
@@ -143,7 +142,7 @@ func TestGetAppInvalidPackageName(t *testing.T) {
 
 func TestGetAppPreservesPackageName(t *testing.T) {
 	for _, id := range []string{
-		"com.example.my_app2", "com.uchi.app",
+		"com.example.my_app2", "com.uchi.app", "Com.uchi.app", "com.Uchi.APP", "com.example.calculatorKSA1211",
 	} {
 		t.Run(id, func(t *testing.T) {
 			router := newRouter(providerFunc(func(_ context.Context, got string) (model.App, error) {

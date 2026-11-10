@@ -161,6 +161,7 @@ func TestSearchByLink(t *testing.T) {
 
 func TestSearchByLinkSelectsStore(t *testing.T) {
 	for _, tc := range []struct{ link, store, id string }{
+		{"https://www.rustore.ru/catalog/app/com.example.calculatorKSA1211", "rustore", "com.example.calculatorKSA1211"},
 		{"https://www.rustore.ru/catalog/app/ru.ivi.client", "rustore", "ru.ivi.client"},
 		{"https://www.rustore.ru/catalog/app/ru.ivi.client/?utm_source=share", "rustore", "ru.ivi.client"},
 		{"www.rustore.ru/catalog/app/ru.ivi.client", "rustore", "ru.ivi.client"},
@@ -200,8 +201,8 @@ func TestSearchByLinkSelectsStore(t *testing.T) {
 
 func TestSearchRejectsInvalidLinks(t *testing.T) {
 	for _, link := range []string{
-		"https://www.rustore.ru/catalog/app/ru.Ivi.client",
-		"www.rustore.ru/catalog/app/ru.Ivi.client",
+		"https://www.rustore.ru/catalog/app/ru.1ivi.client",
+		"www.rustore.ru/catalog/app/ru.1ivi.client",
 		"https://www.rustore.ru/catalog/app/",
 		"https://play.google.com/store/apps/details?id=com.first&id=com.second",
 		"https://example.com/catalog/app/ru.ivi.client",
