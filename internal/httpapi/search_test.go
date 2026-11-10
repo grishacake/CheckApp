@@ -36,7 +36,7 @@ func doSearch(t *testing.T, s searcherFunc, rawQuery string) *httptest.ResponseR
 func doSearchWith(t *testing.T, s searcherFunc, p providerFunc, rawQuery string) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/search", httpapi.NewSearchHandler(s, p, time.Second).Search)
+	mux.HandleFunc("GET /api/search", httpapi.NewSearchHandler(s, p, time.Second).WithRuStore(p).Search)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?"+rawQuery, nil))
 	return rec
@@ -129,6 +129,7 @@ func TestSearchByLink(t *testing.T) {
 	links := []string{
 		"https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru",
 		"https://apps.rustore.ru/app/com.uchi.app",
+		"https://www.rustore.ru/catalog/app/com.uchi.app",
 		// длиннее 100 символов: ограничение длины для ссылок не действует
 		"https://play.google.com/store/apps/details?id=com.uchi.app&hl=ru&gl=US&utm_source=telegram&utm_medium=post&utm_campaign=autumn",
 	}
@@ -156,6 +157,67 @@ func TestSearchByLink(t *testing.T) {
 			t.Errorf("%s: body = %+v", link, body)
 		}
 	}
+}
+
+func TestSearchByLinkSelectsStore(t *testing.T) {
+	for _, tc := range []struct{ link, store, id string }{
+		{"https://www.rustore.ru/catalog/app/ru.ivi.client", "rustore", "ru.ivi.client"},
+		{"https://www.rustore.ru/catalog/app/ru.ivi.client/?utm_source=share", "rustore", "ru.ivi.client"},
+		{"www.rustore.ru/catalog/app/ru.ivi.client", "rustore", "ru.ivi.client"},
+		{"https://apps.rustore.ru/app/ru.ivi.client", "rustore", "ru.ivi.client"},
+		{"https://play.google.com/store/apps/details?id=com.ivi.client&hl=ru", "google_play", "com.ivi.client"},
+	} {
+		t.Run(tc.link, func(t *testing.T) {
+			calls := 0
+			provider := func(store string) providerFunc {
+				return func(_ context.Context, id string) (model.App, error) {
+					calls++
+					if store != tc.store || id != tc.id {
+						t.Errorf("called %s/%s, want %s/%s", store, id, tc.store, tc.id)
+					}
+					return model.App{PackageName: id, StoreURL: tc.link, Name: "Иви"}, nil
+				}
+			}
+			noSearch := searcherFunc(func(context.Context, string, int) ([]model.App, error) {
+				t.Fatal("link reached text search")
+				return nil, nil
+			})
+			h := httpapi.NewSearchHandler(noSearch, provider("google_play"), time.Second).WithRuStore(provider("rustore"))
+			w := httptest.NewRecorder()
+			h.Search(w, httptest.NewRequest("GET", "/api/search?q="+url.QueryEscape(tc.link), nil))
+			var body struct {
+				Results []model.App `json:"results"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != http.StatusOK || calls != 1 || len(body.Results) != 1 || body.Results[0].StoreURL != tc.link {
+				t.Fatalf("HTTP %d, calls %d, body %s", w.Code, calls, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestSearchRejectsInvalidLinks(t *testing.T) {
+	for _, link := range []string{
+		"https://www.rustore.ru/catalog/app/ru.Ivi.client",
+		"www.rustore.ru/catalog/app/ru.Ivi.client",
+		"https://www.rustore.ru/catalog/app/",
+		"https://play.google.com/store/apps/details?id=com.first&id=com.second",
+		"https://example.com/catalog/app/ru.ivi.client",
+	} {
+		h := httpapi.NewSearchHandler(nil, nil, time.Second)
+		w := httptest.NewRecorder()
+		h.Search(w, httptest.NewRequest("GET", "/api/search?q="+url.QueryEscape(link), nil))
+		assertError(t, w, 400, "Некорректная или неподдерживаемая ссылка на приложение")
+	}
+}
+
+func TestSearchRuStoreNotConfigured(t *testing.T) {
+	h := httpapi.NewSearchHandler(nil, nil, time.Second)
+	w := httptest.NewRecorder()
+	h.Search(w, httptest.NewRequest("GET", "/api/search?q="+url.QueryEscape("https://www.rustore.ru/catalog/app/ru.ivi.client"), nil))
+	assertError(t, w, 501, "Получение данных из RuStore ещё не подключено")
 }
 
 // Приложения из ссылки нет → 200 и пустой results, как у поиска без результатов.
