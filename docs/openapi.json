@@ -620,8 +620,8 @@
           "Search"
         ],
         "operationId": "searchApps",
-        "summary": "Найти приложения по словам или получить карточку по ссылке магазина",
-        "description": "Текстовый запрос ищет до 5 карточек Google Play. Ссылка определяет магазин автоматически: Google Play или RuStore, дополнительный флаг не нужен. Для ссылки возвращается одна карточка указанного магазина или 200 и пустой results, если приложение не найдено. Неверная или неподдерживаемая ссылка возвращает 400.",
+        "summary": "Поиск Google Play и RuStore с выбором магазинов",
+        "description": "Текст ищется в выбранных stores, по умолчанию google_play. До 5 карточек каждого магазина, до 10 суммарно. Источники запрашиваются параллельно. Результаты с одинаковым package name объединяются, основные поля берутся из первого выбранного магазина, в котором найден результат. Разные ID остаются отдельными карточками. stores каждого результата содержит подтверждённые источники и неизвестные соответствия. Дополнительные проверки того же ID ограничены общим сроком 2 секунды. Ошибка одного поискового источника даёт частичный HTTP 200 с состоянием sources; ошибка всех источников даёт 502. Для ссылки магазин определяется из URL, а фильтр stores применяется к текстовому поиску.",
         "parameters": [
           {
             "name": "q",
@@ -633,6 +633,34 @@
               "minLength": 1
             },
             "example": "google chrome"
+          },
+          {
+            "name": "stores",
+            "in": "query",
+            "required": false,
+            "description": "Список магазинов через запятую. По умолчанию google_play. Повторы, пустой список и неизвестные магазины дают 400.",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "google_play",
+                  "rustore"
+                ]
+              },
+              "default": [
+                "google_play"
+              ]
+            },
+            "example": [
+              "google_play",
+              "rustore"
+            ]
           }
         ],
         "responses": {
@@ -647,7 +675,7 @@
             }
           },
           "400": {
-            "description": "Пустой, слишком длинный или не UTF-8 запрос; некорректная или неподдерживаемая ссылка",
+            "description": "Некорректный запрос, ссылка или stores",
             "content": {
               "application/json": {
                 "schema": {
@@ -673,7 +701,7 @@
             }
           },
           "502": {
-            "description": "Google Play или RuStore не ответил, вернул некорректную страницу или превысил время ожидания",
+            "description": "Все выбранные поисковые источники недоступны либо источник ссылки не ответил.",
             "content": {
               "application/json": {
                 "schema": {
@@ -681,6 +709,16 @@
                 },
                 "example": {
                   "error": "Не удалось выполнить поиск в Google Play"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Выбранный поиск ещё не подключён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1642,10 +1680,17 @@
           },
           "results": {
             "type": "array",
-            "maxItems": 5,
-            "description": "Для текста — карточки Google Play; для ссылки — одна карточка указанного в ней магазина или пустой список.",
+            "maxItems": 10,
+            "description": "До 5 карточек каждого выбранного магазина. Одинаковые ID объединяются. Для ссылки — одна карточка или пустой массив.",
             "items": {
-              "$ref": "#/components/schemas/App"
+              "$ref": "#/components/schemas/SearchCard"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "description": "Состояние каждого выбранного текстового поиска. Для поиска по ссылке поле может отсутствовать.",
+            "items": {
+              "$ref": "#/components/schemas/SearchSource"
             }
           }
         },
@@ -1660,7 +1705,24 @@
               "icon_url": "https://play-lh.googleusercontent.com/example-icon",
               "category": "Связь",
               "rating": 4.1,
-              "age_rating": "3+"
+              "age_rating": "3+",
+              "stores": [
+                {
+                  "store": "google_play",
+                  "package_name": "com.android.chrome",
+                  "status": "ok"
+                },
+                {
+                  "store": "rustore",
+                  "status": "unknown"
+                }
+              ]
+            }
+          ],
+          "sources": [
+            {
+              "store": "google_play",
+              "status": "ok"
             }
           ]
         }
@@ -1753,6 +1815,109 @@
           "limit",
           "offset"
         ]
+      },
+      "StoreAvailability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "store",
+          "status"
+        ],
+        "properties": {
+          "store": {
+            "type": "string",
+            "enum": [
+              "google_play",
+              "rustore"
+            ]
+          },
+          "package_name": {
+            "type": "string",
+            "description": "Подтверждённый ID карточки магазина. Для unknown может отсутствовать."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "not_found",
+              "unknown"
+            ],
+            "description": "ok — карточка подтверждена; unknown — соответствие или доступность не подтверждены. not_found зарезервирован для заранее известного соответствия ID. Отсутствие пробного одинакового ID оставляет unknown."
+          }
+        }
+      },
+      "SearchCard": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "package_name",
+          "store_url",
+          "name",
+          "developer",
+          "icon_url",
+          "category",
+          "rating",
+          "age_rating",
+          "stores"
+        ],
+        "properties": {
+          "package_name": {
+            "$ref": "#/components/schemas/App/properties/package_name"
+          },
+          "store_url": {
+            "$ref": "#/components/schemas/App/properties/store_url"
+          },
+          "name": {
+            "$ref": "#/components/schemas/App/properties/name"
+          },
+          "developer": {
+            "$ref": "#/components/schemas/App/properties/developer"
+          },
+          "icon_url": {
+            "$ref": "#/components/schemas/App/properties/icon_url"
+          },
+          "category": {
+            "$ref": "#/components/schemas/App/properties/category"
+          },
+          "rating": {
+            "$ref": "#/components/schemas/App/properties/rating"
+          },
+          "age_rating": {
+            "$ref": "#/components/schemas/App/properties/age_rating"
+          },
+          "stores": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/components/schemas/StoreAvailability"
+            }
+          }
+        }
+      },
+      "SearchSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "store",
+          "status"
+        ],
+        "properties": {
+          "store": {
+            "type": "string",
+            "enum": [
+              "google_play",
+              "rustore"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unavailable"
+            ]
+          }
+        }
       }
     }
   }

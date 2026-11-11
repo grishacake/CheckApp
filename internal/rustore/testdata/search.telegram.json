@@ -1,0 +1,110 @@
+{
+  "code": "OK",
+  "message": null,
+  "body": {
+    "content": [
+      {
+        "appId": 2063507966,
+        "packageName": "org.telegram.messenger.web",
+        "minSdkVersion": 23,
+        "appName": "Telegram",
+        "shortDescription": "Быстрое и безопасное общение.",
+        "iconUrl": "https://static.rustore.ru/apk/2063507966/content/ICON/7faf2b87-4975-43f5-803a-d9ae7d180cc1.png",
+        "appType": "MAIN",
+        "versionCode": 73039,
+        "price": 0,
+        "averageUserRating": 3.97,
+        "totalRatings": 29505,
+        "labelIds": [],
+        "isNavSuggest": true,
+        "roundedDownloadsText": "20 млн +"
+      },
+      {
+        "appId": 2063618637,
+        "packageName": "ru.oneme.app",
+        "minSdkVersion": 26,
+        "appName": "МАКС: общение, звонки, сервисы",
+        "shortDescription": "Все в одном приложении: мессенджер, звонки, чат-боты, мини-приложения и другое",
+        "iconUrl": "https://static.rustore.ru/2026/5/14/fb/apk/2063618637/content/ICON/837a3688-06f5-496a-8ae0-fdb30bab51a7.png",
+        "appType": "MAIN",
+        "versionCode": 6915,
+        "price": 0,
+        "averageUserRating": 4.2,
+        "totalRatings": 331797,
+        "labelIds": [
+          243,
+          4
+        ],
+        "isNavSuggest": false,
+        "roundedDownloadsText": "80 млн +"
+      },
+      {
+        "appId": 305484735,
+        "packageName": "com.exteragram.messenger",
+        "minSdkVersion": 24,
+        "appName": "exteraGram - клиент Телеграм",
+        "shortDescription": "Обновленный клиент Телеграм",
+        "iconUrl": "https://static.rustore.ru/apk/305484735/content/ICON/2ea8dc9b-50d5-493a-af06-b9a25887ec10.png",
+        "appType": "MAIN",
+        "versionCode": 72379,
+        "price": 0,
+        "averageUserRating": 4.48,
+        "totalRatings": 694,
+        "labelIds": [],
+        "isNavSuggest": false,
+        "roundedDownloadsText": "200 тыс +"
+      },
+      {
+        "appId": 2063629436,
+        "packageName": "org.messenger_pro.messenger",
+        "minSdkVersion": 21,
+        "appName": "Телеграм клиент: Новаграм мессенджер",
+        "shortDescription": "Novagram Messenger — это быстрый и современный мессенджер.",
+        "iconUrl": "https://static.rustore.ru/2026/6/29/31/apk/2063629436/content/ICON/66d1a2b9-db13-4753-8f4a-87baf43f3c56.png",
+        "appType": "MAIN",
+        "versionCode": 66578,
+        "price": 0,
+        "averageUserRating": 3.66,
+        "totalRatings": 274,
+        "labelIds": [],
+        "isNavSuggest": false,
+        "roundedDownloadsText": "400 тыс +"
+      },
+      {
+        "appId": 317631,
+        "packageName": "com.vkontakte.android",
+        "minSdkVersion": 28,
+        "appName": "ВКонтакте: чаты, видео, музыка",
+        "shortDescription": "ВКонтакте — это общение, мессенджер и звонки, знакомства и игры, видео и музыка",
+        "iconUrl": "https://static.rustore.ru/3f3d7180-6eb9-45ad-8706-f467c6dcf82a",
+        "appType": "MAIN",
+        "versionCode": 60545,
+        "price": 0,
+        "averageUserRating": 4.16,
+        "totalRatings": 373491,
+        "labelIds": [
+          7
+        ],
+        "isNavSuggest": false,
+        "roundedDownloadsText": "60 млн +"
+      }
+    ],
+    "advertAppInfo": null,
+    "pageNumber": 0,
+    "pageSize": 5,
+    "totalElements": 488,
+    "totalPages": 98,
+    "searchQueryId": "ce1da66989e07024",
+    "showcaseQId": "ce1da66989e07024",
+    "spellchecker": {
+      "originQuery": "telegram",
+      "modifiedQuery": "telegram"
+    },
+    "navigSuggestsAppsIds": [
+      2063507966
+    ],
+    "paymentTypeFilterEnabled": false,
+    "searchAnimationUrl": null
+  },
+  "timestamp": "2026-11-11T09:07:22.743Z"
+}
