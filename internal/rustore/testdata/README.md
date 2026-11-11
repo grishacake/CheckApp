@@ -17,3 +17,5 @@
 проверьте все ожидаемые поля в `parser_test.go`.
 
 11 ноября 2026 сохранена `com.axlebolt.standoff2.unavailable.html.gz` со страницы https://www.rustore.ru/catalog/app/com.axlebolt.standoff2. Сервер возвращает HTTP 200, но страница содержит заглушку недоступного приложения, Offer/OutOfStock и кнопку HiddenAppRequestBtn «Узнать о появлении». Такой ответ должен давать app.ErrNotFound. Ошибки разбора обычной карточки остаются ErrInvalidPage.
+
+`search.telegram.json` сохранён 11 ноября 2026 из `https://backapi.rustore.ru/applicationData/apps?query=telegram&pageNumber=0&pageSize=5` с заголовком `ruStoreVerCode: 1000`. В поиске используем только ID кандидатов. Полную карточку загружаем через существующий HTML-клиент.
