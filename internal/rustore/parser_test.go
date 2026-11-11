@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/model"
 	"app-grabber-backend/internal/rustore"
 )
@@ -162,3 +163,24 @@ func TestParseReaderErrors(t *testing.T) {
 type failingReader struct{ err error }
 
 func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestParseUnavailableSavedPage(t *testing.T) {
+	const id = "com.axlebolt.standoff2"
+	page := string(savedPage(t, id+".unavailable"))
+	for _, tc := range []struct {
+		name, page string
+		want       error
+	}{
+		{"unavailable", page, app.ErrNotFound},
+		{"different package", strings.ReplaceAll(page, "/catalog/app/"+id, "/catalog/app/com.example.other"), rustore.ErrInvalidPage},
+		{"missing stub button", strings.ReplaceAll(page, "HiddenAppRequestBtn", "OtherButton"), rustore.ErrInvalidPage},
+		{"different availability", strings.ReplaceAll(page, "https://schema.org/OutOfStock", "https://schema.org/InStock"), rustore.ErrInvalidPage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			card, err := rustore.Parse(strings.NewReader(tc.page), id)
+			if card != (model.App{}) || !errors.Is(err, tc.want) {
+				t.Fatalf("card=%+v err=%v, want %v", card, err, tc.want)
+			}
+		})
+	}
+}
