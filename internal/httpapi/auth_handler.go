@@ -151,17 +151,21 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func decodeAuthRequest(w http.ResponseWriter, r *http.Request, target any) bool {
+	return decodeJSONRequest(w, r, target, 8<<10)
+}
+
+func decodeJSONRequest(w http.ResponseWriter, r *http.Request, target any, maxBytes int64) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType, "Ожидается Content-Type: application/json")
 		return false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeError(w, http.StatusRequestEntityTooLarge, "Тело запроса превышает 8 КиБ")
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("Тело запроса превышает %d КиБ", maxBytes/1024))
 		} else {
 			writeError(w, http.StatusBadRequest, "Не удалось прочитать тело запроса")
 		}

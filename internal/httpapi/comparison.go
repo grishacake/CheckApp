@@ -18,6 +18,7 @@ type ComparisonStore interface {
 type ComparisonHandler struct {
 	Service *comparison.Service
 	Store   ComparisonStore
+	Items   comparison.Repository
 	History *HistoryHandler
 }
 
@@ -30,7 +31,10 @@ func (h ComparisonHandler) RegisterRoutes(mux *http.ServeMux) {
 			authenticated.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-	mux.Handle("GET /api/compare", wrap(h.compare))
+	mux.Handle("GET /api/compare/pair", wrap(h.compare))
+	for _, pattern := range []string{"GET /api/compare", "POST /api/compare", "DELETE /api/compare", "DELETE /api/compare/all", "DELETE /api/compare/{store}/{package_name}"} {
+		mux.Handle(pattern, wrap(h.items))
+	}
 	for _, pattern := range []string{"GET /api/compare/history", "GET /api/compare/favorites", "PUT /api/compare/favorites", "DELETE /api/compare/favorites"} {
 		mux.Handle(pattern, wrap(h.collection))
 	}

@@ -59,6 +59,10 @@ func (s *Service) Compare(ctx context.Context, p Pair) (Response, error) {
 }
 
 func (s *Service) lookup(ctx context.Context, store, id string, provider app.Provider) (Result, error) {
+	return s.lookupWithin(ctx, ctx, store, id, provider)
+}
+
+func (s *Service) lookupWithin(ctx, network context.Context, store, id string, provider app.Provider) (Result, error) {
 	cached, at, err := s.Cache.Lookup(ctx, store, id)
 	hit := err == nil
 	if !hit && !errors.Is(err, app.ErrNotFound) {
@@ -68,11 +72,22 @@ func (s *Service) lookup(ctx context.Context, store, id string, provider app.Pro
 	if hit && age >= 0 && age < s.TTL {
 		return Result{Status: "ok", App: &cached, FetchedAt: &at}, nil
 	}
-	remote, cancel := context.WithTimeout(ctx, s.StoreTimeout)
+	remote, cancel := context.WithTimeout(network, s.StoreTimeout)
 	defer cancel()
-	card, err := provider.GetApp(remote, id)
+	var card model.App
+	err = remote.Err()
+	if err == nil {
+		if provider == nil {
+			err = app.ErrNotConfigured
+		} else {
+			card, err = provider.GetApp(remote, id)
+		}
+	}
 	if ctx.Err() != nil {
 		return Result{}, ctx.Err()
+	}
+	if remote.Err() != nil {
+		err = remote.Err()
 	}
 	if errors.Is(err, app.ErrNotFound) {
 		return Result{Status: "not_found"}, nil

@@ -70,7 +70,7 @@ func TestAuthenticatedComparisonSharesRequestDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequest("GET", server.URL+"/api/compare?google_play=com.example&rustore=ru.example", nil)
+	req, err := http.NewRequest("GET", server.URL+"/api/compare/pair?google_play=com.example&rustore=ru.example", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestComparisonContextExpiresDuringAuthentication(t *testing.T) {
 			if canceled {
 				cancel()
 			}
-			req := httptest.NewRequest("GET", "/api/compare?google_play=com.example&rustore=ru.example", nil).WithContext(ctx)
+			req := httptest.NewRequest("GET", "/api/compare/pair?google_play=com.example&rustore=ru.example", nil).WithContext(ctx)
 			req.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)

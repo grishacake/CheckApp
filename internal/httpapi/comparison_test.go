@@ -67,7 +67,7 @@ func TestComparisonRoutes(t *testing.T) {
 			handler := httpapi.ComparisonHandler{Service: &comparison.Service{GooglePlay: provider(tc.gpErr), RuStore: provider(tc.ruErr), Cache: comparisonCache{tc.age}, TTL: 24 * time.Hour, StoreTimeout: time.Second}, Store: records, History: httpapi.NewHistoryHandler(nil, favoriteUsersStub{}, tokens, time.Second)}
 			mux := http.NewServeMux()
 			handler.RegisterRoutes(mux)
-			url := "/api/compare?google_play=com.google&rustore=ru.store"
+			url := "/api/compare/pair?google_play=com.google&rustore=ru.store"
 			token, err := tokens.Issue("test-user")
 			if err != nil {
 				t.Fatal(err)
@@ -103,7 +103,7 @@ func TestComparisonRoutes(t *testing.T) {
 			if tc.records == 1 && records.records[0] != (comparison.Pair{GooglePlay: "com.google", RuStore: "ru.store"}) {
 				t.Fatal(records.records)
 			}
-			if w := request("GET", "/api/compare?google_play=bad", false); w.Code != 400 {
+			if w := request("GET", "/api/compare/pair?google_play=bad", false); w.Code != 400 {
 				t.Fatal(w.Code)
 			}
 			if w := request("PUT", "/api/compare/favorites", false); w.Code != 401 {
