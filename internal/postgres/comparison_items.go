@@ -5,7 +5,14 @@ import (
 	"fmt"
 
 	"app-grabber-backend/internal/comparison"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type ComparisonRepository struct{ pool *pgxpool.Pool }
+
+func NewComparisonRepository(pool *pgxpool.Pool) *ComparisonRepository {
+	return &ComparisonRepository{pool: pool}
+}
 
 var _ comparison.Repository = (*ComparisonRepository)(nil)
 

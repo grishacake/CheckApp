@@ -76,3 +76,45 @@ func TestResolvePerItemFailures(t *testing.T) {
 		t.Fatalf("cancellation lost: %v", err)
 	}
 }
+
+func TestResolveSlowItemsDoNotStarveHealthyItem(t *testing.T) {
+	for _, stores := range [][2]string{{"google_play", "rustore"}, {"rustore", "google_play"}, {"google_play", "google_play"}, {"rustore", "rustore"}} {
+		t.Run(stores[0]+"_then_"+stores[1], func(t *testing.T) {
+			var calls atomic.Int32
+			provider := resolveProvider(func(ctx context.Context, id string) (model.App, error) {
+				if id == "com.healthy" {
+					if err := ctx.Err(); err != nil {
+						return model.App{}, err
+					}
+					calls.Add(1)
+					return model.App{PackageName: id, Name: "healthy"}, nil
+				}
+				<-ctx.Done()
+				return model.App{}, ctx.Err()
+			})
+			s := Service{GooglePlay: provider, RuStore: provider, Cache: cachedCard{}, TTL: time.Hour, StoreTimeout: 300 * time.Millisecond}
+			items := make([]SavedItem, 7)
+			for i := 0; i < 6; i++ {
+				items[i] = SavedItem{Item: Item{Store: stores[0], PackageName: fmt.Sprintf("com.slow%d", i)}}
+			}
+			items[6] = SavedItem{Item: Item{Store: stores[1], PackageName: "com.healthy"}}
+			for attempt := 0; attempt < 2; attempt++ {
+				results, err := s.Resolve(context.Background(), items)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i, result := range results {
+					if result.Item != items[i].Item {
+						t.Fatal("result order changed")
+					}
+				}
+				if results[6].Status != "ok" || results[6].App == nil {
+					t.Fatalf("attempt %d: healthy app was blocked: %+v", attempt+1, results[6])
+				}
+			}
+			if calls.Load() != 2 {
+				t.Fatalf("healthy calls=%d, want 2", calls.Load())
+			}
+		})
+	}
+}

@@ -43,10 +43,6 @@ func (delayedComparisonCache) Lookup(ctx context.Context, _, _ string) (model.Ap
 }
 func (delayedComparisonCache) Save(context.Context, string, []model.App) error { return nil }
 
-type comparisonDeadlineRecords struct{ httpapi.ComparisonStore }
-
-func (comparisonDeadlineRecords) Record(context.Context, string, comparison.Pair) error { return nil }
-
 func TestAuthenticatedComparisonSharesRequestDeadline(t *testing.T) {
 	tokens, err := auth.NewTokenManager(strings.Repeat("x", 32), time.Hour)
 	if err != nil {
@@ -58,7 +54,7 @@ func TestAuthenticatedComparisonSharesRequestDeadline(t *testing.T) {
 	})
 	h := httpapi.ComparisonHandler{
 		Service: &comparison.Service{GooglePlay: provider, RuStore: provider, Cache: delayedComparisonCache{}, TTL: time.Hour, StoreTimeout: 9 * time.Second},
-		Store:   comparisonDeadlineRecords{}, History: httpapi.NewHistoryHandler(nil, delayedComparisonUsers{}, tokens, 5*time.Second),
+		Items:   &comparisonItemsMemory{users: map[string][]comparison.SavedItem{"test-user": {{Item: comparison.Item{Store: "rustore", PackageName: "com.example"}}}}}, History: httpapi.NewHistoryHandler(nil, delayedComparisonUsers{}, tokens, 5*time.Second),
 	}
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -70,7 +66,7 @@ func TestAuthenticatedComparisonSharesRequestDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequest("GET", server.URL+"/api/compare/pair?google_play=com.example&rustore=ru.example", nil)
+	req, err := http.NewRequest("GET", server.URL+"/api/compare", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +113,7 @@ func TestComparisonContextExpiresDuringAuthentication(t *testing.T) {
 			if canceled {
 				cancel()
 			}
-			req := httptest.NewRequest("GET", "/api/compare/pair?google_play=com.example&rustore=ru.example", nil).WithContext(ctx)
+			req := httptest.NewRequest("GET", "/api/compare", nil).WithContext(ctx)
 			req.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)

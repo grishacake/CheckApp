@@ -118,7 +118,7 @@ func run(ctx context.Context) error {
 	comparisonRepo := postgres.NewComparisonRepository(pool)
 	compare := httpapi.ComparisonHandler{
 		Service: &comparison.Service{GooglePlay: gp, RuStore: ru, Cache: cards, TTL: cacheTTL, StoreTimeout: 9 * time.Second},
-		Store:   comparisonRepo, Items: comparisonRepo, History: historyHandler,
+		Items:   comparisonRepo, History: historyHandler,
 	}
 	compare.RegisterRoutes(mux)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

@@ -47,7 +47,7 @@ func TestStoreFailureDiagnostics(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			output.Reset()
 			s := Service{Cache: cachedCard{tc.hit}, TTL: 24 * time.Hour, StoreTimeout: time.Second}
-			result, err := s.lookup(context.Background(), "rustore", "ru.example.app", failedProvider{tc.err})
+			result, err := s.lookupWithin(context.Background(), context.Background(), "rustore", "ru.example.app", failedProvider{tc.err})
 			if err != nil || result.Status != tc.status || result.Stale != (tc.status == "ok") {
 				t.Fatalf("result = %+v, error = %v", result, err)
 			}

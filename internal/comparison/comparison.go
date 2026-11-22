@@ -10,26 +10,11 @@ import (
 	"app-grabber-backend/internal/model"
 )
 
-type Pair struct {
-	GooglePlay string `json:"google_play"`
-	RuStore    string `json:"rustore"`
-}
-
-type Entry struct {
-	Pair
-	SavedAt time.Time `json:"saved_at"`
-}
-
 type Result struct {
 	Status    string     `json:"status"`
 	App       *model.App `json:"app,omitempty"`
 	FetchedAt *time.Time `json:"fetched_at,omitempty"`
 	Stale     bool       `json:"stale"`
-}
-
-type Response struct {
-	GooglePlay Result `json:"google_play"`
-	RuStore    Result `json:"rustore"`
 }
 
 type Cache interface {
@@ -41,25 +26,6 @@ type Service struct {
 	GooglePlay, RuStore app.Provider
 	Cache               Cache
 	TTL, StoreTimeout   time.Duration
-}
-
-func (s *Service) Compare(ctx context.Context, p Pair) (Response, error) {
-	type outcome struct {
-		result Result
-		err    error
-	}
-	google := make(chan outcome, 1)
-	go func() {
-		result, err := s.lookup(ctx, "google_play", p.GooglePlay, s.GooglePlay)
-		google <- outcome{result, err}
-	}()
-	ru, err := s.lookup(ctx, "rustore", p.RuStore, s.RuStore)
-	gp := <-google
-	return Response{GooglePlay: gp.result, RuStore: ru}, errors.Join(gp.err, err)
-}
-
-func (s *Service) lookup(ctx context.Context, store, id string, provider app.Provider) (Result, error) {
-	return s.lookupWithin(ctx, ctx, store, id, provider)
 }
 
 func (s *Service) lookupWithin(ctx, network context.Context, store, id string, provider app.Provider) (Result, error) {

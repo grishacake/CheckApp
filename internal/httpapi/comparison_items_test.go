@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/auth"
 	"app-grabber-backend/internal/comparison"
 	"app-grabber-backend/internal/httpapi"
@@ -133,16 +134,16 @@ func TestUserComparisonLifecycle(t *testing.T) {
 	if len(repo.users["bob"]) != 3 {
 		t.Fatal("cleared another user's comparison")
 	}
-	request("bob", "DELETE", "/api/compare", "", 204)
+	request("bob", "DELETE", "/api/compare/all", "", 204)
 	if len(repo.users["bob"]) != 0 {
-		t.Fatal("canonical clear failed")
+		t.Fatal("clear failed")
 	}
 }
 
 func TestComparisonItemsAuthenticationAndValidation(t *testing.T) {
 	repo := &comparisonItemsMemory{users: make(map[string][]comparison.SavedItem)}
 	mux, tokens := itemsRouter(t, repo)
-	for _, r := range []struct{ method, path string }{{"GET", "/api/compare"}, {"POST", "/api/compare"}, {"DELETE", "/api/compare"}, {"DELETE", "/api/compare/all"}, {"DELETE", "/api/compare/rustore/com.example"}} {
+	for _, r := range []struct{ method, path string }{{"GET", "/api/compare"}, {"POST", "/api/compare"}, {"DELETE", "/api/compare/all"}, {"DELETE", "/api/compare/rustore/com.example"}} {
 		if w := itemRequest(t, mux, tokens, "", r.method, r.path, `{}`); w.Code != 401 {
 			t.Fatalf("%+v: %d", r, w.Code)
 		}
@@ -158,14 +159,28 @@ func TestComparisonItemsAuthenticationAndValidation(t *testing.T) {
 	if w := itemRequest(t, mux, tokens, "alice", "POST", "/api/compare", `{"items":[],"pad":"`+strings.Repeat("x", 1<<20)+`"}`); w.Code != 413 {
 		t.Fatal(w.Code)
 	}
-	if w := itemRequest(t, mux, tokens, "alice", "DELETE", "/api/compare?store=rustore&package_name=com.example", ""); w.Code != 400 {
-		t.Fatal("ambiguous delete cleared comparison")
+	if w := itemRequest(t, mux, tokens, "alice", "DELETE", "/api/compare?store=rustore&package_name=com.example", ""); w.Code != 405 {
+		t.Fatal("removed endpoint should return 405")
 	}
 	repo.err = errors.New("private database error")
 	for _, method := range []string{"GET", "POST", "DELETE"} {
-		w := itemRequest(t, mux, tokens, "alice", method, "/api/compare", `{"items":[{"store":"rustore","package_name":"com.example"}]}`)
+		path := "/api/compare"
+		if method == "DELETE" {
+			path = "/api/compare/all"
+		}
+		w := itemRequest(t, mux, tokens, "alice", method, path, `{"items":[{"store":"rustore","package_name":"com.example"}]}`)
 		if w.Code != 500 || strings.Contains(w.Body.String(), "private") {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
 }
+
+type comparisonCache struct{ gpAge time.Duration }
+
+func (c comparisonCache) Lookup(_ context.Context, store, id string) (model.App, time.Time, error) {
+	if store == "google_play" && c.gpAge != 0 {
+		return model.App{PackageName: id, Name: "cached"}, time.Now().Add(-c.gpAge), nil
+	}
+	return model.App{}, time.Time{}, app.ErrNotFound
+}
+func (comparisonCache) Save(context.Context, string, []model.App) error { return nil }
