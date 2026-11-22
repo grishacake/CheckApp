@@ -719,58 +719,26 @@
         "tags": [
           "Compare"
         ],
-        "summary": "Сравнить две карточки. В историю вошедшего пользователя попадают пары с хотя бы одной карточкой.",
+        "operationId": "getUserComparison",
+        "summary": "Получить личный список сравнения с карточками",
         "security": [
-          {},
           {
             "cookieAuth": []
           }
         ],
-        "parameters": [
-          {
-            "name": "google_play",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
-              "maxLength": 255
-            },
-            "in": "query"
-          },
-          {
-            "name": "rustore",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
-              "maxLength": 255
-            },
-            "in": "query"
-          }
-        ],
         "responses": {
           "200": {
-            "description": "Результат каждого магазина. Для ok возвращаются app и fetched_at. Подтверждённый 404 даёт not_found.",
+            "description": "Все элементы в порядке добавления, включая отсутствующие и недоступные приложения. Пустой список: items: [].",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Comparison"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Оба магазина недоступны, сохранённых карточек нет",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Comparison"
+                  "$ref": "#/components/schemas/UserComparison"
                 }
               }
             }
           },
           "400": {
-            "description": "Некорректные параметры",
+            "description": "Некорректный запрос. Пакет целиком отклонён.",
             "content": {
               "application/json": {
                 "schema": {
@@ -780,7 +748,17 @@
             }
           },
           "401": {
-            "description": "Ошибка авторизации",
+            "description": "Требуется действующая cookie access_token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недопустимый Origin.",
             "content": {
               "application/json": {
                 "schema": {
@@ -790,7 +768,7 @@
             }
           },
           "500": {
-            "description": "Ошибка сервера",
+            "description": "Ошибка чтения или записи PostgreSQL.",
             "content": {
               "application/json": {
                 "schema": {
@@ -800,7 +778,7 @@
             }
           },
           "504": {
-            "description": "Истекло время обработки запроса",
+            "description": "Истекло общее время обработки запроса.",
             "content": {
               "application/json": {
                 "schema": {
@@ -809,7 +787,202 @@
               }
             }
           }
+        },
+        "description": "Параметры google_play и rustore больше не нужны: список читается из БД для вошедшего пользователя. Для каждого элемента возвращается status: ok, not_found или unavailable. При сбое магазина может вернуться последняя сохранённая карточка со stale=true. Сбои отдельных магазинов не скрывают остальные элементы. Сетевые обращения ограничены общим сроком и шестью параллельными запросами; не успевшие загрузиться элементы остаются в ответе. GET не добавляет и не удаляет элементы."
+      },
+      "post": {
+        "tags": [
+          "Compare"
+        ],
+        "operationId": "addUserComparisonItems",
+        "summary": "Добавить приложения в личный список сравнения",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Пакет добавлен. Дубли по паре store + package_name игнорируются. Для получения карточек выполните GET /api/compare."
+          },
+          "400": {
+            "description": "Некорректный запрос. Пакет целиком отклонён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется действующая cookie access_token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недопустимый Origin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса превышает 1 МиБ.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Ожидается Content-Type: application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения или записи PostgreSQL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло общее время обработки запроса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Передайте непустой массив items. Каждый элемент содержит либо url, либо store и package_name. Магазин из ссылки определяется автоматически; для package_name магазин обязателен. Количество элементов не фиксировано, размер JSON ограничен 1 МиБ. Весь пакет проверяется до записи и сохраняется атомарно. Добавление не обращается к магазинам; отсутствующие приложения остаются в списке со статусом not_found при чтении. Повторное добавление не меняет порядок и added_at.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/components/schemas/ComparisonInput"
+                    }
+                  }
+                }
+              },
+              "example": {
+                "items": [
+                  {
+                    "url": "https://www.rustore.ru/catalog/app/ru.ivi.client"
+                  },
+                  {
+                    "store": "google_play",
+                    "package_name": "ru.ivi.client"
+                  },
+                  {
+                    "store": "rustore",
+                    "package_name": "ru.ozon.app.android"
+                  }
+                ]
+              }
+            }
+          }
         }
+      },
+      "delete": {
+        "tags": [
+          "Compare"
+        ],
+        "operationId": "clearUserComparison",
+        "summary": "Очистить личный список сравнения",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Список очищен. Повторная очистка также возвращает 204."
+          },
+          "400": {
+            "description": "Некорректный запрос. Пакет целиком отклонён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется действующая cookie access_token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недопустимый Origin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения или записи PostgreSQL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло общее время обработки запроса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Удаляет только элементы сравнения текущего пользователя. Карточки кеша, избранное и история остаются. Параметры запроса не принимаются."
       }
     },
     "/api/compare/history": {
@@ -895,7 +1068,9 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true,
+        "description": "Устаревшая коллекция фиксированных пар. Не является текущим личным списком сравнения и не изменяется через новый /api/compare."
       }
     },
     "/api/compare/favorites": {
@@ -981,7 +1156,9 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true,
+        "description": "Устаревшая коллекция фиксированных пар. Не является текущим личным списком сравнения и не изменяется через новый /api/compare."
       },
       "put": {
         "tags": [
@@ -1059,7 +1236,9 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true,
+        "description": "Устаревшая коллекция фиксированных пар. Не является текущим личным списком сравнения и не изменяется через новый /api/compare."
       },
       "delete": {
         "tags": [
@@ -1137,7 +1316,9 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true,
+        "description": "Устаревшая коллекция фиксированных пар. Не является текущим личным списком сравнения и не изменяется через новый /api/compare."
       }
     },
     "/api/apps/{store}/{id}": {
@@ -1257,6 +1438,269 @@
             "$ref": "#/components/responses/AuthTimeout"
           }
         }
+      }
+    },
+    "/api/compare/pair": {
+      "get": {
+        "tags": [
+          "Compare"
+        ],
+        "summary": "Устаревшее сравнение фиксированной пары приложений",
+        "security": [
+          {},
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "google_play",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          },
+          {
+            "name": "rustore",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            },
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Результат каждого магазина. Для ok возвращаются app и fetched_at. Подтверждённый 404 даёт not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Оба магазина недоступны, сохранённых карточек нет",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло время обработки запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "description": "Совместимость со старой моделью пар. Для личного списка используйте POST и GET /api/compare."
+      }
+    },
+    "/api/compare/all": {
+      "delete": {
+        "tags": [
+          "Compare"
+        ],
+        "operationId": "clearUserComparisonAlias",
+        "summary": "Очистить личный список сравнения",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Список очищен. Повторная очистка также возвращает 204."
+          },
+          "400": {
+            "description": "Некорректный запрос. Пакет целиком отклонён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется действующая cookie access_token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недопустимый Origin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения или записи PostgreSQL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло общее время обработки запроса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Алиас DELETE /api/compare. Очищает только личный список текущего пользователя."
+      }
+    },
+    "/api/compare/{store}/{package_name}": {
+      "delete": {
+        "tags": [
+          "Compare"
+        ],
+        "operationId": "removeUserComparisonItem",
+        "summary": "Удалить одно приложение из личного сравнения",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Элемент удалён или уже отсутствовал."
+          },
+          "400": {
+            "description": "Некорректный запрос. Пакет целиком отклонён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется действующая cookie access_token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недопустимый Origin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка чтения или записи PostgreSQL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Истекло общее время обработки запроса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google_play",
+                "rustore"
+              ]
+            }
+          },
+          {
+            "name": "package_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
+            }
+          }
+        ]
       }
     }
   },
@@ -1753,6 +2197,96 @@
           "limit",
           "offset"
         ]
+      },
+      "ComparisonInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Ссылка Google Play, www.rustore.ru/catalog/app/... или apps.rustore.ru/app/.... HTTPS можно не указывать."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "store",
+              "package_name"
+            ],
+            "properties": {
+              "store": {
+                "type": "string",
+                "enum": [
+                  "google_play",
+                  "rustore"
+                ]
+              },
+              "package_name": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+                "maxLength": 255
+              }
+            }
+          }
+        ]
+      },
+      "ComparisonSavedItem": {
+        "type": "object",
+        "required": [
+          "store",
+          "package_name",
+          "added_at"
+        ],
+        "properties": {
+          "store": {
+            "type": "string",
+            "enum": [
+              "google_play",
+              "rustore"
+            ]
+          },
+          "package_name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+            "maxLength": 255
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ComparisonItemResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ComparisonSavedItem"
+          },
+          {
+            "$ref": "#/components/schemas/ComparisonStoreResult"
+          }
+        ]
+      },
+      "UserComparison": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparisonItemResult"
+            }
+          }
+        }
       }
     }
   }
