@@ -3,6 +3,7 @@ package comparison
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,8 +16,10 @@ type Item struct {
 	PackageName string `json:"package_name"`
 }
 
+var storePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,49}$`)
+
 func (i Item) Valid() bool {
-	return (i.Store == "google_play" || i.Store == "rustore") && len(i.PackageName) <= 255 && app.ValidPackageName(i.PackageName)
+	return storePattern.MatchString(i.Store) && len(i.PackageName) <= 255 && app.ValidPackageName(i.PackageName)
 }
 
 type Input struct {

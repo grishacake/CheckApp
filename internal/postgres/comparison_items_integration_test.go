@@ -76,7 +76,7 @@ func TestComparisonItemsIntegration(t *testing.T) {
 			t.Fatal("duplicate insert changed order or timestamp")
 		}
 	}
-	if err := repo.AddItems(ctx, users[0], []comparison.Item{{Store: "rustore", PackageName: "com.new"}, {Store: "bad", PackageName: "com.bad"}}); err == nil {
+	if err := repo.AddItems(ctx, users[0], []comparison.Item{{Store: "rustore", PackageName: "com.new"}, {Store: "bad!", PackageName: "com.bad"}}); err == nil {
 		t.Fatal("invalid batch accepted")
 	}
 	if current, _ := repo.ListItems(ctx, users[0]); len(current) != 3 {

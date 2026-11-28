@@ -23,9 +23,14 @@ type Cache interface {
 }
 
 type Service struct {
-	GooglePlay, RuStore app.Provider
-	Cache               Cache
-	TTL, StoreTimeout   time.Duration
+	Providers         map[string]app.Provider
+	Cache             Cache
+	TTL, StoreTimeout time.Duration
+}
+
+// Supports проверяет подключение провайдера; реестр заполняется до запуска сервера.
+func (s *Service) Supports(store string) bool {
+	return s.Providers[store] != nil
 }
 
 func (s *Service) lookupWithin(ctx, network context.Context, store, id string, provider app.Provider) (Result, error) {

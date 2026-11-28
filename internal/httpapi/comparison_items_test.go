@@ -70,7 +70,7 @@ func itemsRouter(t *testing.T, repo *comparisonItemsMemory) (*http.ServeMux, *au
 	})
 	h := httpapi.ComparisonHandler{
 		Items: repo, History: httpapi.NewHistoryHandler(nil, favoriteUsersStub{}, tokens, time.Second),
-		Service: &comparison.Service{GooglePlay: provider, RuStore: provider, Cache: comparisonCache{}, TTL: time.Hour, StoreTimeout: time.Second},
+		Service: &comparison.Service{Providers: map[string]app.Provider{"google_play": provider, "rustore": provider}, Cache: comparisonCache{}, TTL: time.Hour, StoreTimeout: time.Second},
 	}
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)

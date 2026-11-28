@@ -53,7 +53,7 @@ func TestAuthenticatedComparisonSharesRequestDeadline(t *testing.T) {
 		return model.App{PackageName: id, Name: "card"}, err
 	})
 	h := httpapi.ComparisonHandler{
-		Service: &comparison.Service{GooglePlay: provider, RuStore: provider, Cache: delayedComparisonCache{}, TTL: time.Hour, StoreTimeout: 9 * time.Second},
+		Service: &comparison.Service{Providers: map[string]app.Provider{"google_play": provider, "rustore": provider}, Cache: delayedComparisonCache{}, TTL: time.Hour, StoreTimeout: 9 * time.Second},
 		Items:   &comparisonItemsMemory{users: map[string][]comparison.SavedItem{"test-user": {{Item: comparison.Item{Store: "rustore", PackageName: "com.example"}}}}}, History: httpapi.NewHistoryHandler(nil, delayedComparisonUsers{}, tokens, 5*time.Second),
 	}
 	mux := http.NewServeMux()

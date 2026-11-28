@@ -26,7 +26,7 @@ func TestResolveBoundsConcurrencyAndReturnsEveryItem(t *testing.T) {
 		<-ctx.Done()
 		return model.App{}, ctx.Err()
 	})
-	s := Service{GooglePlay: provider, RuStore: provider, Cache: cachedCard{hit: true}, TTL: time.Hour, StoreTimeout: 30 * time.Millisecond}
+	s := Service{Providers: map[string]app.Provider{"google_play": provider, "rustore": provider}, Cache: cachedCard{hit: true}, TTL: time.Hour, StoreTimeout: 30 * time.Millisecond}
 	items := make([]SavedItem, 30)
 	for i := range items {
 		items[i] = SavedItem{Item: Item{Store: "rustore", PackageName: fmt.Sprintf("com.app%d", i)}}
@@ -59,7 +59,7 @@ func TestResolvePerItemFailures(t *testing.T) {
 		}
 		return model.App{PackageName: id, Name: "card"}, nil
 	})
-	s := Service{GooglePlay: provider, RuStore: provider, Cache: cachedCard{}, TTL: time.Hour, StoreTimeout: time.Second}
+	s := Service{Providers: map[string]app.Provider{"google_play": provider, "rustore": provider}, Cache: cachedCard{}, TTL: time.Hour, StoreTimeout: time.Second}
 	items := []SavedItem{{Item: Item{"google_play", "com.ok"}}, {Item: Item{"rustore", "com.missing"}}, {Item: Item{"rustore", "com.down"}}}
 	results, err := s.Resolve(context.Background(), items)
 	if err != nil {
@@ -92,7 +92,7 @@ func TestResolveSlowItemsDoNotStarveHealthyItem(t *testing.T) {
 				<-ctx.Done()
 				return model.App{}, ctx.Err()
 			})
-			s := Service{GooglePlay: provider, RuStore: provider, Cache: cachedCard{}, TTL: time.Hour, StoreTimeout: 300 * time.Millisecond}
+			s := Service{Providers: map[string]app.Provider{"google_play": provider, "rustore": provider}, Cache: cachedCard{}, TTL: time.Hour, StoreTimeout: 300 * time.Millisecond}
 			items := make([]SavedItem, 7)
 			for i := 0; i < 6; i++ {
 				items[i] = SavedItem{Item: Item{Store: stores[0], PackageName: fmt.Sprintf("com.slow%d", i)}}

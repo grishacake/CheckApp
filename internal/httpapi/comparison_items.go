@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 
 	"app-grabber-backend/internal/comparison"
@@ -41,6 +42,12 @@ func (h ComparisonHandler) items(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeError(w, 400, err.Error())
 			return
+		}
+		for n, item := range items {
+			if !h.Service.Supports(item.Store) {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("items[%d]: магазин %q не подключён", n, item.Store))
+				return
+			}
 		}
 		if h.History.handleError(w, r, ctx, h.Items.AddItems(ctx, user, items)) {
 			return
