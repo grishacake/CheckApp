@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"net/url"
+	"slices"
 	"testing"
 	"time"
 
@@ -78,7 +80,7 @@ func TestSearchRejectsInvalidStoreFilters(t *testing.T) {
 		return nil, nil
 	})
 	h := httpapi.NewSearchHandler(never, nil, time.Second).WithStoreSearch(app.NewStoreSearch(map[string]app.Searcher{"google_play": never}, nil))
-	for _, query := range []string{"q=test&stores=", "q=test&stores=other", "q=test&stores=rustore,rustore", "q=test&stores=rustore&stores=google_play", "q=test&stores=google_play,"} {
+	for _, query := range []string{"q=test&stores=", "q=test&stores=apkpure", "q=test&stores=other", "q=test&stores=rustore,rustore", "q=test&stores=rustore&stores=google_play", "q=test&stores=google_play,"} {
 		w := httptest.NewRecorder()
 		h.Search(w, httptest.NewRequest("GET", "/api/search?"+query, nil))
 		if w.Code != 400 {
@@ -117,6 +119,61 @@ func TestSearchPartialAndTotalStoreFailure(t *testing.T) {
 		}
 		if w.Code != 200 || len(body.Results) != 1 || len(body.Sources) != 2 || body.Sources[1].Status != "unavailable" {
 			t.Fatalf("HTTP %d %s", w.Code, w.Body)
+		}
+	}
+}
+
+func TestAPKPureSearchLinkReturnsAPKPureSource(t *testing.T) {
+	const id = "org.telegram.messenger"
+	const link = "https://apkpure.com/telegram/" + id
+	google := providerFunc(func(context.Context, string) (model.App, error) {
+		t.Fatal("APKPure link went to Google Play")
+		return model.App{}, nil
+	})
+	apk := providerFunc(func(_ context.Context, got string) (model.App, error) {
+		if got != id {
+			t.Errorf("provider got %q, want %q", got, id)
+		}
+		return model.App{PackageName: id, Name: "Telegram", StoreURL: link}, nil
+	})
+	h := httpapi.NewSearchHandler(nil, google, time.Second).WithAPKPure(apk)
+	w := httptest.NewRecorder()
+	h.Search(w, httptest.NewRequest("GET", "/api/search?q="+url.QueryEscape(link)+"&stores=rustore", nil))
+	var body struct {
+		Results []app.SearchResult `json:"results"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || len(body.Results) != 1 || body.Results[0].PackageName != id {
+		t.Fatalf("HTTP %d: %s", w.Code, w.Body)
+	}
+	want := app.StoreRef{Store: "apkpure", PackageName: id, Status: "ok"}
+	if !slices.Contains(body.Results[0].Stores, want) {
+		t.Fatalf("no APKPure source in %+v", body.Results[0].Stores)
+	}
+}
+
+func TestAPKPureSearchLinkErrors(t *testing.T) {
+	const link = "https://apkpure.com/p/com.example.Missing"
+	for _, providerErr := range []error{app.ErrNotFound, errors.New("APKPure returned HTTP 503")} {
+		h := httpapi.NewSearchHandler(nil, nil, time.Second).WithAPKPure(providerFunc(func(context.Context, string) (model.App, error) {
+			return model.App{}, providerErr
+		}))
+		w := httptest.NewRecorder()
+		h.Search(w, httptest.NewRequest("GET", "/api/search?q="+url.QueryEscape(link), nil))
+		if !errors.Is(providerErr, app.ErrNotFound) {
+			assertError(t, w, 502, "Не удалось получить данные из APKPure")
+			continue
+		}
+		var body struct {
+			Results []app.SearchResult `json:"results"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 200 || body.Results == nil || len(body.Results) != 0 {
+			t.Fatalf("want empty results, got HTTP %d %s", w.Code, w.Body)
 		}
 	}
 }

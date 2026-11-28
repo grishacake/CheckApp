@@ -42,18 +42,26 @@ func StoreAppHandler(handlers map[string]*Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		handler, ok := handlers[r.PathValue("store")]
 		if !ok {
-			writeError(w, http.StatusBadRequest, "Неизвестный магазин. Используйте google_play или rustore")
+			writeError(w, http.StatusBadRequest, "Неизвестный магазин. Используйте google_play, rustore или apkpure")
 			return
 		}
 		handler.GetApp(w, r)
 	}
 }
 
-func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
-	storeName := "Google Play"
-	if h.store == "rustore" {
-		storeName = "RuStore"
+func storeDisplayName(store string) string {
+	switch store {
+	case "rustore":
+		return "RuStore"
+	case "apkpure":
+		return "APKPure"
+	default:
+		return "Google Play"
 	}
+}
+
+func (h *Handler) GetApp(w http.ResponseWriter, r *http.Request) {
+	storeName := storeDisplayName(h.store)
 	packageName := r.PathValue("id")
 	if !app.ValidPackageName(packageName) {
 		writeError(w, http.StatusBadRequest, "Некорректный формат package_name")

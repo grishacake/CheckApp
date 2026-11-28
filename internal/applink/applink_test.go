@@ -43,3 +43,24 @@ func TestPackageName(t *testing.T) {
 		}
 	}
 }
+
+func TestParseAPKPureLink(t *testing.T) {
+	for _, tc := range []struct {
+		url, id string
+	}{
+		{"https://apkpure.com/telegram/org.telegram.messenger", "org.telegram.messenger"},
+		{"https://apkpure.com/p/com.example.MixedCase", "com.example.MixedCase"},
+		{"apkpure.net/ru/whatsapp-android/com.whatsapp/?utm_source=share", "com.whatsapp"},
+		{"https://www.apkpure.com/pt-BR/p/com.example.MixedCase", "com.example.MixedCase"},
+		{"https://apkpure.com/telegram/org.telegram.messenger/download", ""},
+		{"https://apkpure.com/../com.example.app", ""},
+		{"https://apkpure.com:8443/p/com.example.app", ""},
+		{"https://apkpure.com.example.org/p/com.example.app", ""},
+		{"https://apkpure.com@example.org/p/com.example.app", ""},
+	} {
+		link, ok := Parse(tc.url)
+		if ok != (tc.id != "") || ok && (link.Store != "apkpure" || link.PackageName != tc.id) {
+			t.Errorf("Parse(%q) = %+v, %v; want APKPure ID %q", tc.url, link, ok, tc.id)
+		}
+	}
+}

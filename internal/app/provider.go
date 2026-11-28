@@ -15,8 +15,11 @@ var (
 
 var packageNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$`)
 
+// store_apps.store_app_id is limited to 255 characters.
+const maxPackageNameLength = 255
+
 func ValidPackageName(s string) bool {
-	return packageNamePattern.MatchString(s)
+	return len(s) <= maxPackageNameLength && packageNamePattern.MatchString(s)
 }
 
 type Provider interface {

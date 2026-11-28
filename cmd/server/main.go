@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"app-grabber-backend/docs"
+	"app-grabber-backend/internal/apkpure"
 	"app-grabber-backend/internal/app"
 	"app-grabber-backend/internal/auth"
 	"app-grabber-backend/internal/comparison"
@@ -77,12 +78,14 @@ func run(ctx context.Context) error {
 	catalog := app.NewCatalog(gp, gp, cards, "google_play", cacheTTL).WithSearchTTL(searchTTL)
 	ru := rustore.Client{HTTP: &http.Client{Timeout: 10 * time.Second}}
 	ruCatalog := app.NewCatalog(ru, ru, cards, "rustore", cacheTTL).WithSearchTTL(searchTTL)
+	apkCatalog := app.NewCatalog(apkpure.Client{}, nil, cards, "apkpure", cacheTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
 	storeSearch := app.NewStoreSearch(
 		map[string]app.Searcher{"google_play": catalog, "rustore": ruCatalog},
 		map[string]app.Provider{"google_play": catalog, "rustore": ruCatalog},
 	)
-	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second).WithRuStore(ruCatalog).WithStoreSearch(storeSearch)
+	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second).
+		WithRuStore(ruCatalog).WithAPKPure(apkCatalog).WithStoreSearch(storeSearch)
 
 	users := postgres.NewUserRepository(pool)
 	authService := auth.NewService(users)
@@ -113,6 +116,7 @@ func run(ctx context.Context) error {
 	historyHandler := httpapi.NewHistoryHandler(historyRepo, authService, tokens, 5*time.Second)
 	handler.WithHistory(historyRepo, "google_play")
 	ruHandler := httpapi.NewHandler(ruCatalog, 10*time.Second).WithHistory(historyRepo, "rustore")
+	apkHandler := httpapi.NewHandler(apkCatalog, 10*time.Second).WithHistory(historyRepo, "apkpure")
 
 	mux := http.NewServeMux()
 	docs.Register(mux)
@@ -134,6 +138,7 @@ func run(ctx context.Context) error {
 	mux.Handle("GET /api/apps/{store}/{id}", historyHandler.WrapCard(httpapi.StoreAppHandler(map[string]*httpapi.Handler{
 		"google_play": handler,
 		"rustore":     ruHandler,
+		"apkpure":     apkHandler,
 	})))
 	mux.HandleFunc("GET /api/search", searchHandler.Search)
 
