@@ -41,6 +41,9 @@ func ResultsForStore(store string, cards []model.App) []SearchResult {
 	results := make([]SearchResult, 0, len(cards))
 	for _, card := range cards {
 		refs := []StoreRef{{Store: "google_play", Status: "unknown"}, {Store: "rustore", Status: "unknown"}}
+		if store == "apkpure" {
+			refs = append(refs, StoreRef{Store: "apkpure", Status: "unknown"})
+		}
 		for i := range refs {
 			if refs[i].Store == store {
 				refs[i].PackageName = card.PackageName

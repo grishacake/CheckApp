@@ -25,6 +25,7 @@ type SearchHandler struct {
 	searcher    app.Searcher
 	provider    app.Provider // карточка по ссылке
 	ruStore     app.Provider
+	apkPure     app.Provider
 	storeSearch *app.StoreSearch
 	timeout     time.Duration
 }
@@ -41,6 +42,11 @@ func (h *SearchHandler) WithRuStore(provider app.Provider) *SearchHandler {
 	return h
 }
 
+func (h *SearchHandler) WithAPKPure(provider app.Provider) *SearchHandler {
+	h.apkPure = provider
+	return h
+}
+
 func (h *SearchHandler) WithStoreSearch(search *app.StoreSearch) *SearchHandler {
 	h.storeSearch = search
 	return h
@@ -53,7 +59,7 @@ type searchResponse struct {
 }
 
 // Search — GET /api/search?q=google chrome: до 5 карточек в порядке выдачи Google Play.
-// Если q — ссылка на карточку в Google Play или RuStore, возвращает эту одну карточку.
+// Если q — ссылка на карточку поддерживаемого магазина, возвращает эту одну карточку.
 func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
@@ -142,10 +148,14 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 // searchByLink отвечает карточкой приложения из ссылки. Не найдено — пустой results, как у поиска.
 func (h *SearchHandler) searchByLink(ctx context.Context, w http.ResponseWriter, r *http.Request, query string, link applink.Link) {
-	provider, storeName := h.provider, "Google Play"
-	if link.Store == "rustore" {
-		provider, storeName = h.ruStore, "RuStore"
+	provider := h.provider
+	switch link.Store {
+	case "rustore":
+		provider = h.ruStore
+	case "apkpure":
+		provider = h.apkPure
 	}
+	storeName := storeDisplayName(link.Store)
 	if provider == nil {
 		writeError(w, http.StatusNotImplemented, fmt.Sprintf("Получение данных из %s ещё не подключено", storeName))
 		return

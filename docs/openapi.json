@@ -262,7 +262,8 @@
             "description": "Формат обратного домена",
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
             },
             "example": "com.uchi.app"
           }
@@ -509,7 +510,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
             },
             "example": "com.uchi.app"
           }
@@ -580,7 +582,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
             },
             "example": "com.uchi.app"
           }
@@ -620,14 +623,14 @@
           "Search"
         ],
         "operationId": "searchApps",
-        "summary": "Поиск Google Play и RuStore с выбором магазинов",
-        "description": "Текст ищется в выбранных stores, по умолчанию google_play. До 5 карточек каждого магазина, до 10 суммарно. Источники запрашиваются параллельно. Результаты с одинаковым package name объединяются, основные поля берутся из первого выбранного магазина, в котором найден результат. Разные ID остаются отдельными карточками. stores каждого результата содержит подтверждённые источники и неизвестные соответствия. Дополнительные проверки того же ID ограничены общим сроком 2 секунды. Ошибка одного поискового источника даёт частичный HTTP 200 с состоянием sources; ошибка всех источников даёт 502. Для ссылки магазин определяется из URL, а фильтр stores применяется к текстовому поиску.",
+        "summary": "Поиск приложений по тексту или ссылке",
+        "description": "Текст ищется в выбранных stores, по умолчанию google_play. До 5 карточек каждого магазина, до 10 суммарно. Источники запрашиваются параллельно. Результаты с одинаковым package name объединяются, основные поля берутся из первого выбранного магазина, в котором найден результат. Разные ID остаются отдельными карточками. stores каждого результата содержит подтверждённые источники и неизвестные соответствия. Дополнительные проверки того же ID ограничены общим сроком 2 секунды. Ошибка одного поискового источника даёт частичный HTTP 200 с состоянием sources; ошибка всех источников даёт 502. Для ссылки магазин определяется из URL, а фильтр stores применяется к текстовому поиску. По ссылке доступны Google Play, RuStore и APKPure.",
         "parameters": [
           {
             "name": "q",
             "in": "query",
             "required": true,
-            "description": "Поисковая строка, 1–100 символов, UTF-8, или ссылка на карточку: https://play.google.com/store/apps/details?id=com.uchi.app, https://www.rustore.ru/catalog/app/ru.ivi.client; старый формат https://apps.rustore.ru/app/ru.ivi.client тоже поддерживается (для ссылок ограничения длины нет)",
+            "description": "Поисковая строка длиной 1–100 символов в UTF-8 или ссылка на карточку. Можно передать https://play.google.com/store/apps/details?id=com.uchi.app, https://www.rustore.ru/catalog/app/ru.ivi.client, https://apps.rustore.ru/app/ru.ivi.client или https://apkpure.com/telegram/org.telegram.messenger. Ограничение в 100 символов применяется к поисковой строке.",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -665,7 +668,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Ответ - найденные приложения",
+            "description": "Найденные приложения. Ссылка на отсутствующую карточку даёт пустой results.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1185,7 +1188,7 @@
         ],
         "operationId": "getStoreApp",
         "summary": "Получить карточку из выбранного магазина",
-        "description": "Магазины google_play и rustore. Возвращает одну карточку model.App. Свежая карточка читается из отдельного кэша магазина, отсутствующая или устаревшая загружается из этого магазина и сохраняется в PostgreSQL. Успешный GET записывается в историю карточек с выбранным магазином. Авторизация необязательна, неверная cookie даёт 401. Отсутствие приложения даёт 404, временная ошибка магазина — 502.",
+        "description": "Магазины google_play, rustore и apkpure. Возвращает одну карточку model.App. Свежая карточка читается из кэша магазина. Отсутствующая или устаревшая карточка загружается из магазина и сохраняется в PostgreSQL. Успешный GET записывается в историю карточек с выбранным магазином. Авторизация необязательна, неверная cookie даёт 401. Отсутствие приложения даёт 404, временная ошибка магазина — 502.",
         "security": [
           {},
           {
@@ -1201,7 +1204,8 @@
               "type": "string",
               "enum": [
                 "google_play",
-                "rustore"
+                "rustore",
+                "apkpure"
               ]
             },
             "example": "rustore"
@@ -1213,7 +1217,8 @@
             "description": "Формат обратного домена",
             "schema": {
               "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
+              "maxLength": 255
             },
             "example": "com.uchi.app"
           }
@@ -1506,7 +1511,7 @@
           "store_url": {
             "type": "string",
             "format": "uri",
-            "description": "Ссылка на карточку в исходном магазине Google Play или RuStore."
+            "description": "Ссылка на карточку в исходном магазине Google Play, RuStore или APKPure."
           },
           "name": {
             "type": "string",
@@ -1828,7 +1833,8 @@
             "type": "string",
             "enum": [
               "google_play",
-              "rustore"
+              "rustore",
+              "apkpure"
             ]
           },
           "package_name": {
@@ -1888,10 +1894,11 @@
           "stores": {
             "type": "array",
             "minItems": 2,
-            "maxItems": 2,
+            "maxItems": 3,
             "items": {
               "$ref": "#/components/schemas/StoreAvailability"
-            }
+            },
+            "description": "Для карточки APKPure добавляется третий элемент с кодом apkpure."
           }
         }
       },
