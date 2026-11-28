@@ -220,4 +220,17 @@ func TestAppsIntegration(t *testing.T) {
 	if len(foundExpired) != 0 {
 		t.Fatalf("expected 0 results for expired window, got %d", len(foundExpired))
 	}
+	for _, query := range []string{ftsCard.PackageName, strings.ToUpper(ftsCard.PackageName), ftsCard.PackageName[1 : len(ftsCard.PackageName)-1]} {
+		found, err := repo.SearchByText(ctx, storeCode, query, 5, time.Hour)
+		if err != nil || len(found) == 0 || found[0].PackageName != ftsCard.PackageName {
+			t.Fatalf("package fragment %q: results=%+v err=%v", query, found, err)
+		}
+	}
+	for _, query := range []string{"%", "__missing_fragment__"} {
+		found, err := repo.SearchByText(ctx, storeCode, query, 5, time.Hour)
+		if err != nil || len(found) != 0 {
+			t.Fatalf("literal fragment %q: %+v %v", query, found, err)
+		}
+	}
+
 }
