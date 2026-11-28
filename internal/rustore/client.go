@@ -19,11 +19,7 @@ func (c Client) GetApp(ctx context.Context, id string) (model.App, error) {
 	if err != nil {
 		return model.App{}, err
 	}
-	client := *c.HTTP
-	client.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	resp, err := client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return model.App{}, err
 	}
@@ -36,4 +32,10 @@ func (c Client) GetApp(ctx context.Context, id string) (model.App, error) {
 	default:
 		return model.App{}, fmt.Errorf("RuStore returned HTTP %d", resp.StatusCode)
 	}
+}
+
+func (c Client) do(req *http.Request) (*http.Response, error) {
+	client := *c.HTTP
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return client.Do(req)
 }
