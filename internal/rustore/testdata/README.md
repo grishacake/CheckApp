@@ -15,3 +15,5 @@
 Ожидаемые рейтинги соответствуют видимой HTML-микроразметке карточек: значения
 в JSON-LD этих же страниц иногда округлены иначе. При обновлении снимков
 проверьте все ожидаемые поля в `parser_test.go`.
+
+11 ноября 2026 сохранена `com.axlebolt.standoff2.unavailable.html.gz` со страницы https://www.rustore.ru/catalog/app/com.axlebolt.standoff2. Сервер возвращает HTTP 200, но страница содержит заглушку недоступного приложения, Offer/OutOfStock и кнопку HiddenAppRequestBtn «Узнать о появлении». Такой ответ должен давать app.ErrNotFound. Ошибки разбора обычной карточки остаются ErrInvalidPage.
