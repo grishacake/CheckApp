@@ -51,7 +51,6 @@ func (r *AppRepository) GetFresh(ctx context.Context, storeCode, packageName str
 	return decodeStoredApp(metadata, packageName)
 }
 
-// SearchByText searches apps in the specified store using full-text search against the app name.
 // Only records scraped within the maxAge interval are considered.
 func (r *AppRepository) SearchByText(ctx context.Context, storeCode, query string, limit int, maxAge time.Duration) ([]model.App, error) {
 	if err := ctx.Err(); err != nil {
@@ -66,11 +65,14 @@ func (r *AppRepository) SearchByText(ctx context.Context, storeCode, query strin
 		FROM public.store_apps sa
 		JOIN public.stores s ON s.id = sa.store_id
 		WHERE s.code = $1 AND s.is_active = TRUE
-		  AND (sa.search_vector @@ plainto_tsquery('russian', $2) OR sa.search_vector @@ plainto_tsquery('simple', $2))
+		  AND (sa.search_vector @@ plainto_tsquery('russian', $2) OR sa.search_vector @@ plainto_tsquery('simple', $2)
+		       OR strpos(lower(sa.store_app_id), lower($2)) > 0)
 		  AND sa.scraped_at > NOW() - make_interval(secs => $3::double precision)
 		  AND sa.scraped_at <= NOW()
-		ORDER BY (ts_rank(sa.search_vector, plainto_tsquery('russian', $2)) + ts_rank(sa.search_vector, plainto_tsquery('simple', $2))) DESC
-		LIMIT $4`, storeCode, query, maxAge.Seconds(), limit)
+		ORDER BY (lower(sa.store_app_id) = lower($2)) DESC,
+		         (strpos(lower(sa.store_app_id), lower($2)) > 0) DESC,
+		         (ts_rank(sa.search_vector, plainto_tsquery('russian', $2)) + ts_rank(sa.search_vector, plainto_tsquery('simple', $2))) DESC, sa.store_app_id
+		LIMIT $4`, storeCode, strings.TrimSpace(query), maxAge.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("search local apps: %w", err)
 	}
