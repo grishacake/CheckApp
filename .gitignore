@@ -2,3 +2,6 @@
 .env.*
 !.env.example
 /bin/
+
+.DS_Store
+**/.DS_Store

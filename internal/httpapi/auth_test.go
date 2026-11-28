@@ -24,20 +24,19 @@ func TestWithAuth(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name    string
-		headers []string
+		cookies []string
+		header  string
 		query   string
 		status  int
 	}{
-		{"valid", []string{"Bearer " + raw}, "", http.StatusNoContent},
-		{"case insensitive scheme", []string{"bearer " + raw}, "", http.StatusNoContent},
-		{"missing", nil, "", http.StatusUnauthorized},
-		{"empty", []string{""}, "", http.StatusUnauthorized},
-		{"missing token", []string{"Bearer"}, "", http.StatusUnauthorized},
-		{"wrong scheme", []string{"Basic " + raw}, "", http.StatusUnauthorized},
-		{"malformed token", []string{"Bearer broken"}, "", http.StatusUnauthorized},
-		{"extra token", []string{"Bearer " + raw + " extra"}, "", http.StatusUnauthorized},
-		{"duplicate headers", []string{"Bearer " + raw, "Bearer " + raw}, "", http.StatusUnauthorized},
-		{"query only", nil, "?access_token=" + raw, http.StatusUnauthorized},
+		{"valid cookie", []string{raw}, "", "", http.StatusNoContent},
+		{"missing cookie", nil, "", "", http.StatusUnauthorized},
+		{"empty cookie", []string{""}, "", "", http.StatusUnauthorized},
+		{"malformed token", []string{"broken"}, "", "", http.StatusUnauthorized},
+		{"duplicate cookies", []string{raw, raw}, "", "", http.StatusUnauthorized},
+		{"query only", nil, "", "?access_token=" + raw, http.StatusUnauthorized},
+		{"bearer no longer authenticates", nil, "Bearer " + raw, "", http.StatusUnauthorized},
+		{"header does not override cookie", []string{raw}, "Bearer broken", "", http.StatusNoContent},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			called := false
@@ -54,8 +53,11 @@ func TestWithAuth(t *testing.T) {
 			})
 			req := httptest.NewRequest(http.MethodGet, "/private"+tt.query, nil)
 			req = req.WithContext(context.WithValue(req.Context(), requestKey{}, "preserved"))
-			for _, header := range tt.headers {
-				req.Header.Add("Authorization", header)
+			for _, cookie := range tt.cookies {
+				req.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: cookie})
+			}
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
 			}
 			response := httptest.NewRecorder()
 			httpapi.WithAuth(tokens, next).ServeHTTP(response, req)
@@ -66,8 +68,8 @@ func TestWithAuth(t *testing.T) {
 				t.Error("original request context mutated")
 			}
 			if tt.status == http.StatusUnauthorized {
-				if response.Header().Get("WWW-Authenticate") != "Bearer" {
-					t.Error("missing Bearer challenge")
+				if response.Header().Get("WWW-Authenticate") != "" {
+					t.Error("unexpected authentication challenge")
 				}
 				if response.Header().Get("Content-Type") != "application/json; charset=utf-8" {
 					t.Error("expected JSON")

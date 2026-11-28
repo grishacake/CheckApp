@@ -60,10 +60,10 @@ func TestFavoriteHandlerListAndMutation(t *testing.T) {
 	repo := &favoriteRepoStub{}
 	mux := http.NewServeMux()
 	httpapi.NewFavoriteHandler(repo, favoriteUsersStub{}, tokens, 0).RegisterRoutes(mux)
-	request := func(method, path, bearer string) *httptest.ResponseRecorder {
+	request := func(method, path, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, nil)
-		if bearer != "" {
-			r.Header.Set("Authorization", "Bearer "+bearer)
+		if token != "" {
+			r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 		}
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
@@ -119,7 +119,7 @@ func TestFavoriteHandlerRejectsDeletedUser(t *testing.T) {
 	mux := http.NewServeMux()
 	httpapi.NewFavoriteHandler(&favoriteRepoStub{}, favoriteUsersStub{err: auth.ErrUserNotFound}, tokens, 0).RegisterRoutes(mux)
 	r := httptest.NewRequest("GET", "/api/favorites", nil)
-	r.Header.Set("Authorization", "Bearer "+token)
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
@@ -142,7 +142,7 @@ func TestFavoriteHandlerUserScopeTimeoutAndCancellation(t *testing.T) {
 	httpapi.NewFavoriteHandler(repo, favoriteUsersStub{}, tokens, 0).RegisterRoutes(mux)
 	for _, tc := range []struct{ token, id string }{{tokenA, "user-a"}, {tokenB, "user-b"}} {
 		r := httptest.NewRequest("GET", "/api/favorites", nil)
-		r.Header.Set("Authorization", "Bearer "+tc.token)
+		r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: tc.token})
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		if w.Code != http.StatusOK || repo.user != tc.id {
@@ -153,7 +153,7 @@ func TestFavoriteHandlerUserScopeTimeoutAndCancellation(t *testing.T) {
 	timeoutMux := http.NewServeMux()
 	httpapi.NewFavoriteHandler(&favoriteRepoStub{}, timedUsers, tokens, time.Millisecond).RegisterRoutes(timeoutMux)
 	r := httptest.NewRequest("GET", "/api/favorites", nil)
-	r.Header.Set("Authorization", "Bearer "+tokenA)
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: tokenA})
 	w := httptest.NewRecorder()
 	timeoutMux.ServeHTTP(w, r)
 	if w.Code != http.StatusGatewayTimeout {
@@ -162,7 +162,7 @@ func TestFavoriteHandlerUserScopeTimeoutAndCancellation(t *testing.T) {
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	r = httptest.NewRequest("GET", "/api/favorites", nil).WithContext(canceled)
-	r.Header.Set("Authorization", "Bearer "+tokenA)
+	r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: tokenA})
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusOK || w.Body.Len() != 0 {

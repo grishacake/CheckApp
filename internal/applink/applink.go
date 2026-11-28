@@ -8,37 +8,59 @@ import (
 	"app-grabber-backend/internal/app"
 )
 
-// PackageName возвращает package name из ссылки вида
-// https://play.google.com/store/apps/details?id=com.uchi.app или https://apps.rustore.ru/app/com.uchi.app.
-// Схему можно не указывать. Не ссылка на карточку — false.
+type Link struct {
+	Store       string
+	PackageName string
+}
+
 func PackageName(raw string) (string, bool) {
+	link, ok := Parse(raw)
+	return link.PackageName, ok
+}
+
+func Parse(raw string) (Link, bool) {
 	if !strings.Contains(raw, "://") {
-		raw = "https://" + raw // Кладем хост в путь
+		raw = "https://" + raw
 	}
-	u, err := url.Parse(raw) // Парсим
-	if err != nil {
-		return "", false
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
+		return Link{}, false
 	}
 
 	var id string
+	var link Link
 	switch strings.ToLower(u.Hostname()) {
 	case "play.google.com":
+		link.Store = "google_play"
 		if u.Path != "/store/apps/details" {
-			return "", false
+			return link, false
 		}
-		id = u.Query().Get("id")
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil || len(query["id"]) != 1 {
+			return link, false
+		}
+		id = query.Get("id")
 	case "apps.rustore.ru":
+		link.Store = "rustore"
 		path, ok := strings.CutPrefix(u.Path, "/app/")
 		if !ok {
-			return "", false
+			return link, false
+		}
+		id = strings.TrimSuffix(path, "/")
+	case "www.rustore.ru", "rustore.ru":
+		link.Store = "rustore"
+		path, ok := strings.CutPrefix(u.Path, "/catalog/app/")
+		if !ok {
+			return link, false
 		}
 		id = strings.TrimSuffix(path, "/")
 	default:
-		return "", false
+		return Link{}, false
 	}
 
 	if !app.ValidPackageName(id) {
-		return "", false
+		return link, false
 	}
-	return id, true
+	link.PackageName = id
+	return link, true
 }

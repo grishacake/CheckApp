@@ -31,6 +31,10 @@ func (f saveCardsFunc) Save(ctx context.Context, store string, cards []model.App
 	return f(ctx, store, cards)
 }
 
+func (f saveCardsFunc) SearchByText(context.Context, string, string, int, time.Duration) ([]model.App, error) {
+	return nil, nil
+}
+
 func TestCatalogSavesFreshResults(t *testing.T) {
 	first := model.App{PackageName: "com.example.first", Name: "First"}
 	second := model.App{PackageName: "com.example.second", Name: "Second"}

@@ -13,9 +13,8 @@ var (
 	ErrNotConfigured = errors.New("app provider not configured")
 )
 
-var packageNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
+var packageNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$`)
 
-// ValidPackageName проверяет формат package name: com.uchi.app.
 func ValidPackageName(s string) bool {
 	return packageNamePattern.MatchString(s)
 }

@@ -67,7 +67,7 @@ func authRequest(handler http.Handler, method, path, body, token string) *httpte
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	if token != "" {
-		r.Header.Set("Authorization", "Bearer "+token)
+		r.AddCookie(&http.Cookie{Name: httpapi.AuthCookieName, Value: token})
 	}
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
@@ -113,9 +113,14 @@ func TestAuthHandlerFullFlow(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil {
 		t.Fatal(err)
 	}
-	if login.TokenType != "Bearer" || login.User != user || strings.Contains(w.Body.String(), "assword") || w.Header().Get("Cache-Control") != "no-store" {
+	if login.AccessToken != "" || login.TokenType != "" || login.User != user || strings.Contains(w.Body.String(), "assword") || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("unexpected login response")
 	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].Secure || cookies[0].Path != "/" || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].MaxAge != 60 {
+		t.Fatal("invalid login cookie")
+	}
+	login.AccessToken = cookies[0].Value
 	if id, err := tokens.Verify(login.AccessToken); err != nil || id != user.ID {
 		t.Fatalf("issued token: id=%q err=%v", id, err)
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"mime"
@@ -25,12 +26,15 @@ type AuthService interface {
 type AuthTokens interface {
 	TokenVerifier
 	Issue(userID string) (string, error)
+	Lifetime() time.Duration
 }
 
 type AuthHandler struct {
-	service AuthService
-	tokens  AuthTokens
-	timeout time.Duration
+	service        AuthService
+	tokens         AuthTokens
+	timeout        time.Duration
+	cookieSecure   bool
+	cookieSameSite http.SameSite
 }
 
 type registerRequest struct {
@@ -45,21 +49,38 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	AccessToken string     `json:"access_token"`
-	TokenType   string     `json:"token_type"`
-	User        model.User `json:"user"`
+	User model.User `json:"user"`
 }
 
 func NewAuthHandler(service AuthService, tokens AuthTokens, timeout time.Duration) *AuthHandler {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	return &AuthHandler{service: service, tokens: tokens, timeout: timeout}
+	return &AuthHandler{service: service, tokens: tokens, timeout: timeout, cookieSecure: false, cookieSameSite: http.SameSiteLaxMode}
+}
+
+func (h *AuthHandler) WithCookieOptions(secure bool, sameSite http.SameSite) *AuthHandler {
+	h.cookieSecure, h.cookieSameSite = secure, sameSite
+	return h
+}
+
+func (h *AuthHandler) sessionCookie(value string, maxAge int) *http.Cookie {
+	return &http.Cookie{Name: AuthCookieName, Value: value, Path: "/", HttpOnly: true,
+		Secure: h.cookieSecure, SameSite: h.cookieSameSite, MaxAge: maxAge}
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	cookie := h.sessionCookie("", -1)
+	cookie.Expires = time.Unix(1, 0)
+	http.SetCookie(w, cookie)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *AuthHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/register", h.Register)
 	mux.HandleFunc("POST /api/auth/login", h.Login)
+	mux.HandleFunc("POST /api/auth/logout", h.Logout)
 	mux.Handle("GET /api/auth/me", WithAuth(h.tokens, http.HandlerFunc(h.Me)))
 }
 
@@ -100,7 +121,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if handleAuthError(w, r, ctx, err) {
 		return
 	}
-	writeAuthResponse(w, http.StatusOK, loginResponse{AccessToken: token, TokenType: "Bearer", User: user})
+	body, err := json.Marshal(loginResponse{User: user})
+	if handleAuthError(w, r, ctx, err) {
+		return
+	}
+	cookie := h.sessionCookie(token, int(h.tokens.Lifetime()/time.Second))
+	cookie.Expires = time.Now().Add(h.tokens.Lifetime()).UTC()
+	http.SetCookie(w, cookie)
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +201,7 @@ func handleAuthError(w http.ResponseWriter, r *http.Request, ctx context.Context
 	case errors.Is(err, auth.ErrInvalidNickname):
 		writeError(w, http.StatusBadRequest, "Ник обязателен: от 1 до 50 символов, без управляющих символов")
 	case errors.Is(err, auth.ErrInvalidPassword):
-		writeError(w, http.StatusBadRequest, "Пароль должен содержать от 15 до 128 символов")
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Пароль должен содержать от %d до %d символов", auth.MinPasswordLength, auth.MaxPasswordLength))
 	case errors.Is(err, auth.ErrEmailAlreadyExists):
 		writeError(w, http.StatusConflict, "Пользователь с таким email уже существует")
 	case errors.Is(err, auth.ErrInvalidCredentials):
