@@ -76,9 +76,13 @@ func run(ctx context.Context) error {
 	cards := postgres.NewAppRepository(pool)
 	catalog := app.NewCatalog(gp, gp, cards, "google_play", cacheTTL).WithSearchTTL(searchTTL)
 	ru := rustore.Client{HTTP: &http.Client{Timeout: 10 * time.Second}}
-	ruCatalog := app.NewCatalog(ru, nil, cards, "rustore", cacheTTL)
+	ruCatalog := app.NewCatalog(ru, ru, cards, "rustore", cacheTTL).WithSearchTTL(searchTTL)
 	handler := httpapi.NewHandler(catalog, 10*time.Second)
-	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second).WithRuStore(ruCatalog)
+	storeSearch := app.NewStoreSearch(
+		map[string]app.Searcher{"google_play": catalog, "rustore": ruCatalog},
+		map[string]app.Provider{"google_play": catalog, "rustore": ruCatalog},
+	)
+	searchHandler := httpapi.NewSearchHandler(catalog, catalog, 12*time.Second).WithRuStore(ruCatalog).WithStoreSearch(storeSearch)
 
 	users := postgres.NewUserRepository(pool)
 	authService := auth.NewService(users)

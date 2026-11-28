@@ -82,3 +82,14 @@ func TestClientRejectsInvalidPackageName(t *testing.T) {
 		t.Fatal("invalid package name accepted")
 	}
 }
+
+func TestClientRecognizesUnavailablePageWithHTTP200(t *testing.T) {
+	const id = "com.axlebolt.standoff2"
+	client := rustore.Client{HTTP: &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(savedPage(t, id+".unavailable"))))}, nil
+	})}}
+	_, err := client.GetApp(context.Background(), id)
+	if !errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("HTTP 200 stub: got %v, want ErrNotFound", err)
+	}
+}
