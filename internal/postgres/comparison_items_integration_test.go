@@ -111,4 +111,24 @@ func TestComparisonItemsIntegration(t *testing.T) {
 	if err != nil || len(other) != 0 {
 		t.Fatal("user deletion did not cascade", other, err)
 	}
+	store := fmt.Sprintf("comparison_test_%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO stores(code,name) VALUES($1,$1)`, store); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		pool.Exec(context.Background(), `DELETE FROM comparison_items WHERE store=$1`, store)
+		pool.Exec(context.Background(), `DELETE FROM stores WHERE code=$1`, store)
+	}()
+	extra := comparison.Item{Store: store, PackageName: "com.extra"}
+	if err := repo.AddItems(ctx, users[0], []comparison.Item{extra}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := repo.ListItems(ctx, users[0])
+	if err != nil || len(saved) != 1 || saved[0].Item != extra {
+		t.Fatal(saved, err)
+	}
+	if err := repo.RemoveItem(ctx, users[0], extra); err != nil {
+		t.Fatal(err)
+	}
+
 }

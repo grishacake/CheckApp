@@ -118,3 +118,55 @@ func TestResolveSlowItemsDoNotStarveHealthyItem(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveManyStores(t *testing.T) {
+	providers := make(map[string]app.Provider)
+	items := make([]SavedItem, 14)
+	var active, maximum atomic.Int32
+	for i := range items {
+		store := fmt.Sprintf("store_%d", i%7)
+		items[i] = SavedItem{Item: Item{Store: store, PackageName: fmt.Sprintf("com.app%d", i)}}
+		providers[store] = resolveProvider(func(ctx context.Context, id string) (model.App, error) {
+			n := active.Add(1)
+			defer active.Add(-1)
+			for old := maximum.Load(); n > old && !maximum.CompareAndSwap(old, n); old = maximum.Load() {
+			}
+			select {
+			case <-ctx.Done():
+				return model.App{}, ctx.Err()
+			case <-time.After(5 * time.Millisecond):
+			}
+			return model.App{PackageName: id, Name: store}, nil
+		})
+	}
+	service := Service{Providers: providers, Cache: cachedCard{}, TTL: time.Hour, StoreTimeout: time.Second}
+	results, err := service.Resolve(context.Background(), items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maximum.Load() > 6 {
+		t.Fatalf("parallel calls=%d", maximum.Load())
+	}
+	for i, result := range results {
+		if result.Item != items[i].Item || result.Status != "ok" || result.App == nil || result.App.Name != items[i].Store {
+			t.Fatalf("item %d: %+v", i, result)
+		}
+	}
+}
+
+func TestResolveDisconnectedStore(t *testing.T) {
+	for _, hit := range []bool{false, true} {
+		s := Service{Cache: cachedCard{hit: hit}, TTL: time.Hour, StoreTimeout: time.Second}
+		results, err := s.Resolve(context.Background(), []SavedItem{{Item: Item{"disconnected", "com.example"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hit {
+			if results[0].Status != "ok" || !results[0].Stale {
+				t.Fatal(results)
+			}
+		} else if results[0].Status != "unavailable" {
+			t.Fatal(results)
+		}
+	}
+}

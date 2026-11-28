@@ -184,3 +184,33 @@ func (c comparisonCache) Lookup(_ context.Context, store, id string) (model.App,
 	return model.App{}, time.Time{}, app.ErrNotFound
 }
 func (comparisonCache) Save(context.Context, string, []model.App) error { return nil }
+
+func TestComparisonRegistryLifecycle(t *testing.T) {
+	repo := &comparisonItemsMemory{users: make(map[string][]comparison.SavedItem)}
+	tokens := newHandlerTokens(t)
+	provider := providerFunc(func(_ context.Context, id string) (model.App, error) {
+		return model.App{PackageName: id, Name: "card"}, nil
+	})
+	service := &comparison.Service{Providers: map[string]app.Provider{"third_store": provider}, Cache: comparisonCache{}, TTL: time.Hour, StoreTimeout: time.Second}
+	mux := http.NewServeMux()
+	httpapi.ComparisonHandler{Items: repo, Service: service, History: httpapi.NewHistoryHandler(nil, favoriteUsersStub{}, tokens, time.Second)}.RegisterRoutes(mux)
+	request := func(method, path, body string, code int) {
+		t.Helper()
+		w := itemRequest(t, mux, tokens, "alice", method, path, body)
+		if w.Code != code {
+			t.Fatalf("%s %s: %d %s", method, path, w.Code, w.Body.String())
+		}
+	}
+	request("POST", "/api/compare", `{"items":[{"store":"third_store","package_name":"com.example"},{"store":"unknown","package_name":"com.other"}]}`, 400)
+	if len(repo.users["alice"]) != 0 {
+		t.Fatal("unsupported batch partially saved")
+	}
+	request("POST", "/api/compare", `{"items":[{"store":"third_store","package_name":"com.example"}]}`, 204)
+	request("GET", "/api/compare", "", 200)
+	// Реестр заменяется между запросами, как при перезапуске сервера без провайдера.
+	service.Providers = nil
+	request("DELETE", "/api/compare/third_store/com.example", "", 204)
+	if len(repo.users["alice"]) != 0 {
+		t.Fatal("disconnected store cannot be removed")
+	}
+}
