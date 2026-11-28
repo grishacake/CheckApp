@@ -33,13 +33,14 @@ func (t *schemaTypes) UnmarshalJSON(data []byte) error {
 }
 
 type schemaNode struct {
-	Type          schemaTypes   `json:"@type"`
-	ID            string        `json:"@id"`
-	Name          string        `json:"name"`
-	URL           string        `json:"url"`
-	Image         string        `json:"image"`
-	ContentRating string        `json:"contentRating"`
-	Rating        *schemaRating `json:"aggregateRating"`
+	Type          schemaTypes     `json:"@type"`
+	ID            string          `json:"@id"`
+	Name          string          `json:"name"`
+	URL           string          `json:"url"`
+	Image         string          `json:"image"`
+	ContentRating string          `json:"contentRating"`
+	Rating        *schemaRating   `json:"aggregateRating"`
+	Offers        json.RawMessage `json:"offers"`
 	Author        struct {
 		ID   string `json:"@id"`
 		Name string `json:"name"`
@@ -102,6 +103,15 @@ func Parse(r io.Reader, packageName string) (model.App, error) {
 	}
 	if details == nil || heading == "" {
 		return model.App{}, fmt.Errorf("%w: application data missing", ErrInvalidPage)
+	}
+	var offer struct {
+		Availability string `json:"availability"`
+	}
+	if json.Unmarshal(details.Offers, &offer) == nil &&
+		offer.Availability == "https://schema.org/OutOfStock" &&
+		doc.Find(`[data-testid="HiddenAppRequestBtn"]`).Length() > 0 {
+		// RuStore also serves unavailable catalog stubs with HTTP 200.
+		return model.App{}, fmt.Errorf("%w: RuStore catalog stub for %s", app.ErrNotFound, packageName)
 	}
 	card := model.App{
 		PackageName: packageName,
@@ -179,6 +189,7 @@ func decodeSchema(data []byte, depth int) ([]schemaNode, error) {
 				"name": &node.Name, "url": &node.URL, "image": &node.Image,
 				"contentRating": &node.ContentRating, "author": &node.Author,
 				"aggregateRating": &node.Rating,
+				"offers":          &node.Offers,
 			}
 		}
 		if slices.Contains(header.Type, "Organization") {
